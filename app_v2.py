@@ -892,21 +892,6 @@ else:
     st.markdown("Select a flagged IP to trace the fraud reasoning end-to-end.")
     
     traceable_ips = get_traceable_ips(200)
-    
-    if not traceable_ips.empty:
-        col1, col2 = st.columns([1, 2])
-        
-        with col1:
-            classifications = ['All'] + traceable_ips['classification'].unique().tolist()
-            selected_class = st.selectbox("Filter by Classification", classifications)
-            
-            filtered = traceable_ips if selected_class == 'All' else traceable_ips[traceable_ips['classification'] == selected_class]
-            
-            ip_df = filtered.head(50).copy()
-            ip_df['label'] = ip_df.apply(lambda x: f"{x['ip']} ({x['classification']}, {x['event_count']:,})", axis=1)
-            
-            selected_ip = st.selectbox("Select IP", ip_df['ip'].tolist(),
-                                      format_func=lambda x: ip_df[ip_df['ip']==x]['label'].iloc[0])
             
             manual_ip = st.text_input("Or enter IP manually:")
             if manual_ip:
