@@ -52,6 +52,15 @@ html, body, .stApp, [class*="st-"], button, input, select, textarea {
 }
 .stApp { background: #ffffff; color: var(--p39-ink-900); -webkit-font-smoothing: antialiased; }
 
+/* Never override Streamlit's Material Symbols icon font — the broad rule
+   above was turning icons into ligature text (e.g. "keyboard_double_arrow"). */
+[data-testid="stIconMaterial"],
+span.material-icons, span.material-symbols-rounded, span.material-symbols-outlined,
+[data-testid="stExpanderToggleIcon"],
+.stApp [class*="st-emotion"] span[translate="no"] {
+  font-family: 'Material Symbols Rounded', 'Material Symbols Outlined', 'Material Icons' !important;
+}
+
 h1, h2, h3, h4, h5, h6,
 [data-testid="stHeading"] {
   font-family: 'Libre Franklin', sans-serif !important;
@@ -79,7 +88,18 @@ code, kbd, pre, .stCode, [data-testid="stCode"] {
   background: var(--p39-context);
   border-right: 1px solid var(--p39-blue-700);
 }
-[data-testid="stSidebar"] * { color: var(--p39-blue-100); }
+/* Base sidebar text — but NOT inside alerts/popovers/inputs, which keep
+   their own dark-on-light colors (this is what was hiding widgets). */
+[data-testid="stSidebar"] p,
+[data-testid="stSidebar"] span,
+[data-testid="stSidebar"] li,
+[data-testid="stSidebar"] .stMarkdown,
+[data-testid="stSidebar"] [data-testid="stRadio"] label,
+[data-testid="stSidebar"] [data-testid="stWidgetLabel"] { color: var(--p39-blue-100); }
+/* Restore normal dark text inside things that render on light surfaces */
+[data-testid="stSidebar"] [data-testid="stAlert"] *,
+[data-testid="stSidebar"] [data-testid="stExpander"] *,
+[data-testid="stSidebar"] [data-baseweb="popover"] * { color: inherit; }
 [data-testid="stSidebar"] h1,
 [data-testid="stSidebar"] h2,
 [data-testid="stSidebar"] h3,
@@ -205,6 +225,58 @@ code, kbd, pre, .stCode, [data-testid="stCode"] {
 
 /* Radio (main area) selected dot uses primaryColor already; add spacing */
 [data-testid="stRadio"] label { font-weight: 500; }
+
+/* ---- Date input + calendar popover --------------------------------- */
+[data-testid="stDateInput"] [data-baseweb="input"] > div { border-radius: var(--p39-r-lg) !important; }
+/* The calendar renders in a portal on the page body, so style it globally */
+[data-baseweb="calendar"] {
+  border-radius: var(--p39-r-lg);
+  box-shadow: var(--p39-shadow-lg);
+  border: 1px solid var(--p39-ink-200);
+}
+[data-baseweb="calendar"] [aria-label][role="gridcell"] > div { border-radius: var(--p39-r-full) !important; }
+/* selected day */
+[data-baseweb="calendar"] div[aria-selected="true"],
+[data-baseweb="day"][aria-selected="true"] > div {
+  background: var(--p39-page-signals) !important;
+  color: #ffffff !important;
+}
+/* hovered / in-range day */
+[data-baseweb="calendar"] div[role="gridcell"] > div:hover {
+  background: var(--p39-blue-100) !important;
+  color: var(--p39-context) !important;
+}
+/* month/year nav chevrons + labels */
+[data-baseweb="calendar"] button svg { fill: var(--p39-page-signals); }
+
+/* ---- Dropdown / select popover menu (renders in body portal) -------- */
+[data-baseweb="popover"] [role="listbox"],
+[data-baseweb="menu"] {
+  border-radius: var(--p39-r-lg);
+  box-shadow: var(--p39-shadow-lg);
+  border: 1px solid var(--p39-ink-200);
+}
+[data-baseweb="menu"] li[aria-selected="true"],
+[role="option"][aria-selected="true"] { background: var(--p39-blue-50) !important; color: var(--p39-context) !important; }
+[data-baseweb="menu"] li:hover,
+[role="option"]:hover { background: var(--p39-blue-100) !important; color: var(--p39-context) !important; }
+
+/* ---- Status / "health" icons -------------------------------------- */
+/* Alert leading glyphs (check / warn / error / info) inherit brand colors */
+[data-testid="stAlertContentSuccess"] svg { fill: var(--p39-success); color: var(--p39-success); }
+[data-testid="stAlertContentWarning"] svg { fill: var(--p39-warning); color: var(--p39-warning); }
+[data-testid="stAlertContentError"]   svg { fill: var(--p39-danger);  color: var(--p39-danger); }
+[data-testid="stAlertContentInfo"]    svg { fill: var(--p39-info);    color: var(--p39-info); }
+/* Sidebar alerts sit on light fills: force readable dark body text */
+[data-testid="stSidebar"] [data-testid="stAlert"] p { color: var(--p39-ink-700) !important; }
+
+/* ---- Radio & checkbox marks --------------------------------------- */
+[data-testid="stRadio"] [role="radio"][aria-checked="true"],
+[data-testid="stCheckbox"] [data-baseweb="checkbox"] [aria-checked="true"] {
+  background-color: var(--p39-page-signals) !important;
+  border-color: var(--p39-page-signals) !important;
+}
+[data-testid="stSidebar"] [data-testid="stRadio"] [role="radiogroup"] label { color: var(--p39-blue-100) !important; }
 
 /* ---- Tabs ----------------------------------------------------------- */
 .stTabs [data-baseweb="tab-list"] { gap: 4px; border-bottom: 1px solid var(--p39-ink-200); }

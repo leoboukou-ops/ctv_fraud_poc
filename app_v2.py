@@ -9,21 +9,31 @@ import gdown
 from datetime import datetime
 
 # ============================================
-# PEER39 BRANDING
+# PEER39 BRANDING - MUST BE FIRST
 # ============================================
-from peer39_style import apply_peer39_theme, peer39_header, sidebar_logo
+from peer39_style import apply_peer39_theme, peer39_header, sidebar_logo, style_plotly
+
+# ============================================
+# PAGE CONFIG - MUST BE THE FIRST STREAMLIT COMMAND
+# ============================================
+st.set_page_config(
+    page_title="CTV Fraud Detector",
+    page_icon="📺",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
+# ============================================
+# APPLY PEER39 THEME
+# ============================================
+apply_peer39_theme()  # Inject the CSS
+sidebar_logo()        # Add logo to sidebar (white version)
 
 # ============================================
 # GOOGLE DRIVE FILE IDs
 # ============================================
 google_drive_full_db = "14wLgFa80bMl9PKfPYrVSiSHLvjISJgle"
 google_drive_demo_db = "1HtoEBV_AHoVGKpEq7uROKuaa53VJqYaU"
-
-st.set_page_config(page_title="CTV Fraud Detector", layout="wide")
-
-# Apply Peer39 theme
-apply_peer39_theme()
-sidebar_logo()
 
 # ============================================
 # DATABASE SELECTION
@@ -386,7 +396,7 @@ def get_fraud_reasoning(ip):
 # PAGE 1: DASHBOARD
 # ============================================
 if page == "Dashboard":
-    peer39_header("CTV Fraud Detector")
+    peer39_header("CTV Fraud Detector")  # Top bar with logo
     st.markdown("### MRC-Compliant Fraud Detection with GIVT + SIVT + Unknown Classification")
     show_active_filters()
     
@@ -457,6 +467,7 @@ if page == "Dashboard":
             with col1:
                 fig_device = px.pie(device_distribution, values='event_count', names='device_type',
                                     title='Device Type Distribution', color_discrete_sequence=P39_CHART_PALETTE)
+                fig_device = style_plotly(fig_device)  # Apply Peer39 styling
                 fig_device.update_traces(textposition='inside', textinfo='percent+label')
                 st.plotly_chart(fig_device, use_container_width=True)
             with col2:
@@ -470,12 +481,15 @@ if page == "Dashboard":
         # 4. RAW PEER39 DEVICE TYPES
         st.subheader("Raw Peer39 Device Type Distribution")
         if not raw_device_types.empty and raw_device_types['event_count'].sum() > 0:
-            st.markdown("""<div style="background-color: #e8f4fd; border-left: 4px solid #3d85c6; padding: 10px; border-radius: 4px; margin-bottom: 15px;">
-            <strong>About Raw Device Types:</strong> Original Peer39 values before categorization.</div>""", unsafe_allow_html=True)
+            st.markdown("""
+            <div style="background-color: #f3f8fd; border-left: 4px solid #3d85c6; padding: 10px; border-radius: 4px; margin-bottom: 15px;">
+            <strong>About Raw Device Types:</strong> Original Peer39 values before categorization.
+            </div>""", unsafe_allow_html=True)
             col1, col2 = st.columns([2, 1])
             with col1:
                 fig_raw = px.bar(raw_device_types.head(20), x='raw_device_type', y='event_count',
                                 title='Top 20 Raw Peer39 Device Types', color_discrete_sequence=P39_CHART_PALETTE)
+                fig_raw = style_plotly(fig_raw)  # Apply Peer39 styling
                 fig_raw.update_xaxes(tickangle=45)
                 st.plotly_chart(fig_raw, use_container_width=True)
             with col2:
@@ -502,6 +516,7 @@ if page == "Dashboard":
             with col1:
                 fig = px.pie(pie_data, values='Events', names='Category', title='Traffic Classification',
                             color='Category', color_discrete_map=P39_COLORS)
+                fig = style_plotly(fig)  # Apply Peer39 styling
                 fig.update_traces(textposition='inside', textinfo='percent+label')
                 st.plotly_chart(fig, use_container_width=True)
             with col2:
@@ -526,6 +541,7 @@ if page == "Dashboard":
                         title='Daily Events by Category', barmode='stack',
                         labels={'events': 'Events', 'date': 'Date', 'category': 'Category'},
                         color_discrete_map=P39_COLORS)
+            fig = style_plotly(fig)  # Apply Peer39 styling
             st.plotly_chart(fig, use_container_width=True)
             
             daily_display = daily.copy()
@@ -548,6 +564,7 @@ if page == "Dashboard":
             with col1:
                 fig_givt = px.pie(givt_breakdown, values='event_count', names='givt_type',
                                   title='GIVT by Type', color_discrete_sequence=['#d92d20', '#B54F6F'])
+                fig_givt = style_plotly(fig_givt)  # Apply Peer39 styling
                 fig_givt.update_traces(textposition='inside', textinfo='percent+label')
                 st.plotly_chart(fig_givt, use_container_width=True)
             with col2:
@@ -559,14 +576,18 @@ if page == "Dashboard":
                 st.dataframe(givt_display, use_container_width=True, hide_index=True)
         else: st.info("No GIVT data available")
         
-        # 8. SIVT BREAKDOWN        st.subheader("SIVT Breakdown (Device Mismatch)")
+        # 8. SIVT BREAKDOWN
+        st.subheader("SIVT Breakdown (Device Mismatch)")
         if not sivt_breakdown.empty and sivt_breakdown['event_count'].sum() > 0 and sivt_total > 0:
-            st.markdown("""<div style="background-color: #fff3cd; border-left: 4px solid #E6AF2E; padding: 10px; border-radius: 4px; margin-bottom: 15px;">
-            <strong>Methodology Note:</strong> SIVT = <strong>Device Mismatch only</strong>. Multi-Device, Volume, Overnight moved to roadmap.</div>""", unsafe_allow_html=True)
+            st.markdown("""
+            <div style="background-color: #fbf1d6; border-left: 4px solid #E6AF2E; padding: 10px; border-radius: 4px; margin-bottom: 15px;">
+            <strong>Methodology Note:</strong> SIVT = <strong>Device Mismatch only</strong>. Multi-Device, Volume, Overnight moved to roadmap.
+            </div>""", unsafe_allow_html=True)
             col1, col2 = st.columns([2, 1])
             with col1:
                 fig_sivt = px.pie(sivt_breakdown, values='event_count', names='mismatch_type',
                                   title='SIVT by Mismatch Type', color_discrete_sequence=P39_CHART_PALETTE)
+                fig_sivt = style_plotly(fig_sivt)  # Apply Peer39 styling
                 fig_sivt.update_traces(textposition='inside', textinfo='percent+label')
                 st.plotly_chart(fig_sivt, use_container_width=True)
             with col2:

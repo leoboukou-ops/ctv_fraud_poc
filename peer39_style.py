@@ -69,3 +69,36 @@ def sidebar_logo(logo_path: str = _LOGO_WHITE_PATH) -> None:
         f'<div style="padding:4px 0 12px;"><img src="{uri}" style="height:30px;" alt="Peer39"/></div>',
         unsafe_allow_html=True,
     )
+
+
+# Peer39 category palette — use in Plotly color_discrete_map / _sequence
+PEER39_CATEGORY_COLORS = {
+    "Valid": "#8cba51",     # suitability green
+    "GIVT": "#d92d20",      # danger red
+    "SIVT": "#E6AF2E",      # marketplace amber
+    "Unknown": "#757575",   # platform grey
+    "CTV": "#8cba51",
+    "Tablet": "#3d85c6",
+    "Mobile": "#9fc5e8",
+    "Desktop": "#757575",
+}
+PEER39_SEQUENCE = ["#073763", "#3d85c6", "#8cba51", "#E6AF2E", "#9fc5e8", "#757575", "#B54F6F"]
+
+
+def style_plotly(fig):
+    """Apply the Peer39 look to a Plotly figure (white bg, brand font/colors).
+
+    Usage:  st.plotly_chart(style_plotly(fig), use_container_width=True)
+    """
+    fig.update_layout(
+        paper_bgcolor="#ffffff",
+        plot_bgcolor="#ffffff",
+        font=dict(family="Libre Franklin, sans-serif", color="#101828"),
+        title_font=dict(family="Libre Franklin, sans-serif", color="#073763", size=18),
+        legend=dict(bgcolor="rgba(0,0,0,0)"),
+        colorway=PEER39_SEQUENCE,
+        margin=dict(t=48, r=16, b=16, l=16),
+    )
+    fig.update_xaxes(gridcolor="#e4e7ec", zerolinecolor="#e4e7ec", linecolor="#d0d5dd")
+    fig.update_yaxes(gridcolor="#e4e7ec", zerolinecolor="#e4e7ec", linecolor="#d0d5dd")
+    return fig
