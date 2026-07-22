@@ -3,39 +3,97 @@ import duckdb
 import pandas as pd
 import plotly.express as px
 import os
+import time
+import gdown
 from datetime import datetime
 
 # ============================================
-# DATABASE CONNECTION
+# GOOGLE DRIVE FILE IDs
 # ============================================
-db_path = 'fraud_detection.db'
-if not os.path.exists(db_path):
-    st.error("Database file not found!")
-    st.info("Please run: python3 build_aggregates_v2.py")
-    st.stop()
-
-try:
-    conn = duckdb.connect(db_path, read_only=True)
-except Exception as e:
-    st.error(f"Database connection error: {e}")
-    st.stop()
+google_drive_full_db = "14wLgFa80bMl9PKfPYrVSiSHLvjISJgle"  # Full 10GB database
+google_drive_demo_db = "1HtoEBV_AHoVGKpEq7uROKuaa53VJqYaU"   # Demo 311MB backup
 
 st.set_page_config(page_title="CTV Fraud Detector", layout="wide")
 
 # ============================================
-# DEBUG MODE - Helps identify data issues
+# DATABASE SELECTION
 # ============================================
-with st.sidebar.expander("🔧 Debug Info", expanded=True):
+st.sidebar.markdown("---")
+st.sidebar.header("📊 Database")
+
+db_choice = st.sidebar.radio(
+    "Select database:",
+    ["🚀 Demo (Fast)", "💪 Full (Complete)"],
+    help="Demo: 4.2M events, instant load\nFull: 131M events, 10GB download"
+)
+
+if "Full" in db_choice:
+    db_path = 'fraud_detection_full.db'
+    
+    if not os.path.exists(db_path):
+        st.sidebar.warning("⏳ Full database not downloaded yet")
+        if st.sidebar.button("📥 Download Full Database (10GB)"):
+            with st.spinner("📥 Downloading 10GB database... This will take 15-30 minutes."):
+                progress_bar = st.progress(0)
+                status_text = st.empty()
+                
+                try:
+                    status_text.text("Connecting to Google Drive...")
+                    gdown.download(
+                        f"https://drive.google.com/uc?id={google_drive_full_db}", 
+                        db_path, 
+                        quiet=False
+                    )
+                    progress_bar.progress(100)
+                    status_text.text("✅ Download complete!")
+                    st.success("✅ Full database ready! Refreshing...")
+                    time.sleep(2)
+                    st.rerun()
+                except Exception as e:
+                    progress_bar.progress(0)
+                    status_text.text("❌ Download failed")
+                    st.error(f"Download failed: {e}")
+                    st.info("Try again or use the demo database")
+        # Fallback to demo
+        st.sidebar.info("Using demo database until download completes")
+        db_path = 'fraud_detection.db'
+    elif os.path.getsize(db_path) < 500000000:  # Less than 500MB = likely not full
+        st.sidebar.warning("Full database appears incomplete, using demo")
+        db_path = 'fraud_detection.db'
+else:
+    db_path = 'fraud_detection.db'
+
+# ============================================
+# DATABASE CONNECTION
+# ============================================
+if not os.path.exists(db_path):
+    st.error(f"Database file not found: {db_path}")
+    st.info("Using demo database. Full database available for download in sidebar.")
+    db_path = 'fraud_detection.db'
+    if not os.path.exists(db_path):
+        st.error("No database available. Please upload fraud_detection.db")
+        st.stop()
+
+try:
+    conn = duckdb.connect(db_path, read_only=True)
+    db_size_gb = os.path.getsize(db_path) / 1024 / 1024 / 1024
+    event_count = conn.execute("SELECT COUNT(*) FROM normalized_devices").fetchone()[0]
+    st.sidebar.success(f"✅ {db_size_gb:.1f}GB | {event_count:,} events")
+except Exception as e:
+    st.error(f"Database connection error: {e}")
+    st.stop()
+
+# ============================================
+# DEBUG MODE
+# ============================================
+with st.sidebar.expander("🔧 Debug Info", expanded=False):
     try:
-        # Test basic query
         total = conn.execute("SELECT COUNT(*) FROM normalized_devices").fetchone()[0]
-        st.write(f"✅ Total events in DB: {total:,}")
+        st.write(f"✅ Total events: {total:,}")
         
-        # Test date range
         dates = conn.execute("SELECT MIN(prt_dt), MAX(prt_dt) FROM normalized_devices").fetchone()
         st.write(f"📅 Date range: {dates[0]} to {dates[1]}")
         
-        # Test filter options
         dsp_count = conn.execute("SELECT COUNT(DISTINCT dsp_id) FROM normalized_devices").fetchone()[0]
         st.write(f"🏢 Unique DSPs: {dsp_count:,}")
         
@@ -45,16 +103,8 @@ with st.sidebar.expander("🔧 Debug Info", expanded=True):
         device_count = conn.execute("SELECT COUNT(DISTINCT p39_device_type) FROM normalized_devices WHERE p39_device_type IS NOT NULL AND p39_device_type != ''").fetchone()[0]
         st.write(f"📱 Unique Device Types: {device_count:,}")
         
-        app_count = conn.execute("SELECT COUNT(DISTINCT appstore_app_name) FROM normalized_devices WHERE appstore_app_name IS NOT NULL").fetchone()[0]
-        st.write(f"📲 Unique Apps: {app_count:,}")
-        
-        # Test column existence
-        columns = conn.execute("SELECT column_name FROM information_schema.columns WHERE table_name='normalized_devices'").df()
-        st.write(f"📋 Columns in DB: {len(columns)}")
-        
     except Exception as e:
-        st.error(f"❌ Debug error: {e}")
-        st.exception(e)
+        st.error(f"Debug error: {e}")
 
 # Custom CSS
 st.markdown("""
@@ -87,19 +137,6 @@ max_date = st.sidebar.date_input("End Date", datetime(2026, 6, 22))
 min_date_str = min_date.strftime("%Y-%m-%d")
 max_date_str = max_date.strftime("%Y-%m-%d")
 
-# Test with date filter in debug
-with st.sidebar.expander("🔧 Debug Info", expanded=True):
-    try:
-        test_query = f"""
-        SELECT COUNT(*) 
-        FROM normalized_devices 
-        WHERE prt_dt BETWEEN '{min_date_str}' AND '{max_date_str}'
-        """
-        filtered_total = conn.execute(test_query).fetchone()[0]
-        st.write(f"📊 Events in selected date range: {filtered_total:,}")
-    except Exception as e:
-        st.error(f"❌ Date filter error: {e}")
-
 # ============================================
 # FILTER FUNCTIONS
 # ============================================
@@ -126,7 +163,7 @@ def get_filter_options():
             'devices': ['All'] + devices['p39_device_type'].tolist() if not devices.empty else ['All']
         }
     except Exception as e:
-        st.sidebar.error(f"❌ Error loading filters: {e}")
+        st.sidebar.error(f"Error loading filters: {e}")
         return {'dsps': ['All'], 'exchanges': ['All'], 'apps': ['All'], 'devices': ['All']}
 
 # Initialize session state for filters
@@ -179,8 +216,6 @@ if st.sidebar.button("🔄 Reset All Filters"):
     st.session_state.selected_app = 'All'
     st.session_state.selected_device = 'All'
     st.rerun()
-
-st.sidebar.success("✅ Using persistent database")
 
 # ============================================
 # BUILD FILTER CONDITIONS
@@ -236,8 +271,7 @@ def get_filtered_summary(dsp, exchange, app, device, min_date, max_date):
     try:
         return conn.execute(query).df()
     except Exception as e:
-        st.error(f"❌ Summary query error: {e}")
-        st.code(query)
+        st.error(f"Summary query error: {e}")
         return pd.DataFrame()
 
 @st.cache_data(ttl=3600)
@@ -274,7 +308,7 @@ def get_filtered_daily(dsp, exchange, app, device, min_date, max_date):
         
         return df
     except Exception as e:
-        st.error(f"❌ Daily query error: {e}")
+        st.error(f"Daily query error: {e}")
         return pd.DataFrame()
 
 @st.cache_data(ttl=3600)
@@ -317,7 +351,7 @@ def get_filtered_dsp(dsp, exchange, app, device, min_date, max_date):
         
         return df
     except Exception as e:
-        st.error(f"❌ DSP query error: {e}")
+        st.error(f"DSP query error: {e}")
         return pd.DataFrame()
 
 @st.cache_data(ttl=3600)
@@ -361,12 +395,12 @@ def get_filtered_exchange(dsp, exchange, app, device, min_date, max_date):
         
         return df
     except Exception as e:
-        st.error(f"❌ Exchange query error: {e}")
+        st.error(f"Exchange query error: {e}")
         return pd.DataFrame()
 
 @st.cache_data(ttl=3600)
 def get_sivt_breakdown(dsp, exchange, app, device, min_date, max_date):
-    """Get SIVT breakdown from pre-aggregated table."""
+    """Get SIVT breakdown."""
     where_clause = build_filter_conditions(dsp, exchange, app, device)
     
     query = f"""
@@ -387,7 +421,7 @@ def get_sivt_breakdown(dsp, exchange, app, device, min_date, max_date):
     try:
         return conn.execute(query).df()
     except Exception as e:
-        st.error(f"❌ SIVT breakdown error: {e}")
+        st.error(f"SIVT breakdown error: {e}")
         return pd.DataFrame()
 
 @st.cache_data(ttl=3600)
@@ -417,15 +451,14 @@ def get_givt_breakdown(dsp, exchange, app, device, min_date, max_date):
             return pd.DataFrame(columns=['givt_type', 'event_count'])
         return df
     except Exception as e:
-        st.error(f"❌ GIVT breakdown error: {e}")
+        st.error(f"GIVT breakdown error: {e}")
         return pd.DataFrame(columns=['givt_type', 'event_count'])
 
 @st.cache_data(ttl=3600)
 def get_device_mismatch_data(dsp, exchange, app, device, min_date, max_date):
-    """Get device mismatch data - returns total records, total events, and top 50 records."""
+    """Get device mismatch data."""
     where_clause = build_filter_conditions(dsp, exchange, app, device)
     
-    # Get total counts
     count_query = f"""
     SELECT 
         COUNT(*) as total_records,
@@ -441,7 +474,6 @@ def get_device_mismatch_data(dsp, exchange, app, device, min_date, max_date):
         total_records = 0
         total_events = 0
     
-    # Get top 50 records
     query = f"""
     SELECT 
         ip,
@@ -463,12 +495,9 @@ def get_device_mismatch_data(dsp, exchange, app, device, min_date, max_date):
     except:
         return pd.DataFrame(), total_records, total_events
 
-# ============================================
-# DEVICE TYPE DISTRIBUTION
-# ============================================
 @st.cache_data(ttl=3600)
 def get_device_distribution(dsp, exchange, app, device, min_date, max_date):
-    """Get device type distribution using detected_category for reporting."""
+    """Get device type distribution."""
     where_clause = build_filter_conditions(dsp, exchange, app, device)
     
     query = f"""
@@ -487,12 +516,9 @@ def get_device_distribution(dsp, exchange, app, device, min_date, max_date):
     try:
         return conn.execute(query).df()
     except Exception as e:
-        st.error(f"❌ Device distribution error: {e}")
+        st.error(f"Device distribution error: {e}")
         return pd.DataFrame()
 
-# ============================================
-# RAW PEER39 DEVICE TYPE BREAKDOWN
-# ============================================
 @st.cache_data(ttl=3600)
 def get_raw_device_types(dsp, exchange, app, device, min_date, max_date):
     """Get raw Peer39 device type distribution."""
@@ -514,12 +540,9 @@ def get_raw_device_types(dsp, exchange, app, device, min_date, max_date):
     try:
         return conn.execute(query).df()
     except Exception as e:
-        st.error(f"❌ Raw device types error: {e}")
+        st.error(f"Raw device types error: {e}")
         return pd.DataFrame()
 
-# ============================================
-# TRACEABILITY FUNCTIONS
-# ============================================
 @st.cache_data(ttl=3600)
 def get_traceable_ips(limit=100):
     try:
@@ -607,9 +630,7 @@ if page == "📈 Dashboard":
         invalid_rate = (invalid / total_events * 100) if total_events > 0 else 0
         valid_rate = (valid / total_events * 100) if total_events > 0 else 0
         
-        # ============================================
-        # METRICS ROW
-        # ============================================
+        # Metrics Row
         col1, col2, col3, col4, col5, col6 = st.columns(6)
         with col1:
             st.metric("Total Events", f"{total_events:,}" if total_events > 0 else "0")
@@ -629,9 +650,7 @@ if page == "📈 Dashboard":
             st.metric("Unknown", f"{unknown_rate:.2f}%", 
                      delta=f"{unknown:,.0f} events" if unknown > 0 else None, delta_color="off")
         
-        # ============================================
-        # CRITICAL ALERTS
-        # ============================================
+        # Critical Alerts
         st.subheader("🚨 Critical Alerts")
         alert_col1, alert_col2 = st.columns(2)
         
@@ -663,11 +682,8 @@ if page == "📈 Dashboard":
             else:
                 st.info("✅ No SIVT alerts")
         
-        # ============================================
-        # DEVICE TYPE DISTRIBUTION (detected_category)
-        # ============================================
+        # Device Type Distribution
         st.subheader("📊 Device Type Distribution (Categorized)")
-        
         if not device_distribution.empty and device_distribution['event_count'].sum() > 0:
             col1, col2 = st.columns([2, 1])
             with col1:
@@ -677,28 +693,16 @@ if page == "📈 Dashboard":
                 fig_device.update_traces(textposition='inside', textinfo='percent+label')
                 st.plotly_chart(fig_device, use_container_width=True)
             with col2:
-                st.write("**Categorized Device Types**")
                 device_display = device_distribution.copy()
                 device_display['event_count'] = device_display['event_count'].apply(lambda x: f"{x:,}")
                 device_display['percentage'] = device_display['percentage'].apply(lambda x: f"{x:.2f}%")
                 st.dataframe(device_display, use_container_width=True, hide_index=True)
         else:
-            st.info("No device type data available for the selected filters")
+            st.info("No device type data available")
         
-        # ============================================
-        # RAW PEER39 DEVICE TYPE DISTRIBUTION
-        # ============================================
+        # Raw Peer39 Device Types
         st.subheader("📊 Raw Peer39 Device Type Distribution")
-        
         if not raw_device_types.empty and raw_device_types['event_count'].sum() > 0:
-            st.markdown("""
-            <div style="background-color: #e8f4fd; border-left: 4px solid #3498db; padding: 10px; border-radius: 4px; margin-bottom: 15px;">
-            <strong>💡 About Raw Device Types:</strong> These are the original Peer39 device type values from the raw data, 
-            before any categorization or mapping. This filter controls which device types are included in the analysis.
-            The "Categorized" chart above shows grouped categories derived from these raw types.
-            </div>
-            """, unsafe_allow_html=True)
-            
             col1, col2 = st.columns([2, 1])
             with col1:
                 fig_raw = px.bar(raw_device_types.head(20), x='raw_device_type', y='event_count',
@@ -708,22 +712,17 @@ if page == "📈 Dashboard":
                 fig_raw.update_xaxes(tickangle=45)
                 st.plotly_chart(fig_raw, use_container_width=True)
             with col2:
-                st.write("**Raw Device Types (Top 20)**")
                 raw_display = raw_device_types.head(20).copy()
                 raw_display['event_count'] = raw_display['event_count'].apply(lambda x: f"{x:,}")
                 raw_display['percentage'] = raw_display['percentage'].apply(lambda x: f"{x:.2f}%")
                 raw_display.columns = ['Raw Device Type', 'Events', 'Percentage']
                 st.dataframe(raw_display, use_container_width=True, hide_index=True)
-                
                 st.metric("Total Unique Raw Device Types", len(raw_device_types))
         else:
-            st.info("No raw Peer39 device types available for the selected filters")
+            st.info("No raw Peer39 device types available")
         
-        # ============================================
-        # TRAFFIC CLASSIFICATION
-        # ============================================
+        # Traffic Classification
         st.subheader("📊 Traffic Classification")
-        
         classification_data = []
         if valid > 0:
             classification_data.append({'category': 'Valid Traffic', 'events': int(valid), 'percentage': valid_rate})
@@ -744,21 +743,14 @@ if page == "📈 Dashboard":
                              color_discrete_sequence=['#2ecc71', '#e74c3c', '#f39c12', '#95a5a6'])
                 fig.update_traces(textposition='inside', textinfo='percent+label')
                 st.plotly_chart(fig, use_container_width=True)
-            else:
-                st.info("No classification data available")
         with col2:
-            st.write("**Classification Details**")
             if not classification.empty:
                 display_df = classification.copy()
                 display_df['events'] = display_df['events'].apply(lambda x: f"{x:,}")
                 display_df['percentage'] = display_df['percentage'].apply(lambda x: f"{x:.2f}%")
                 st.dataframe(display_df, use_container_width=True, hide_index=True)
-            else:
-                st.info("No classification data to display")
         
-        # ============================================
-        # GIVT BREAKDOWN
-        # ============================================
+        # GIVT Breakdown
         st.subheader("🛑 GIVT Breakdown")
         if not givt_breakdown.empty and givt_breakdown['event_count'].sum() > 0 and givt > 0:
             col1, col2 = st.columns([2, 1])
@@ -769,19 +761,13 @@ if page == "📈 Dashboard":
                 fig_givt.update_traces(textposition='inside', textinfo='percent+label')
                 st.plotly_chart(fig_givt, use_container_width=True)
             with col2:
-                st.write("**GIVT Details**")
                 givt_display = givt_breakdown.copy()
                 givt_display['event_count'] = givt_display['event_count'].apply(lambda x: f"{x:,}")
-                givt_display['percentage'] = givt_breakdown['event_count'].apply(
-                    lambda x: f"{x/givt*100:.2f}%" if givt > 0 else "0.00%"
-                )
                 st.dataframe(givt_display, use_container_width=True, hide_index=True)
         else:
-            st.info("No GIVT data available for the selected filters")
+            st.info("No GIVT data available")
         
-        # ============================================
-        # SIVT BREAKDOWN
-        # ============================================
+        # SIVT Breakdown
         st.subheader("🔄 SIVT Breakdown (Device Mismatch)")
         if not sivt_breakdown.empty and sivt_breakdown['event_count'].sum() > 0 and sivt_total > 0:
             col1, col2 = st.columns([2, 1])
@@ -792,30 +778,21 @@ if page == "📈 Dashboard":
                 fig_sivt.update_traces(textposition='inside', textinfo='percent+label')
                 st.plotly_chart(fig_sivt, use_container_width=True)
             with col2:
-                st.write("**SIVT Details**")
                 sivt_display = sivt_breakdown.copy()
                 sivt_display['event_count'] = sivt_display['event_count'].apply(lambda x: f"{x:,}")
-                sivt_display['percentage'] = sivt_breakdown['event_count'].apply(
-                    lambda x: f"{x/sivt_total*100:.2f}%" if sivt_total > 0 else "0.00%"
-                )
-                st.dataframe(sivt_display[['mismatch_type', 'event_count', 'percentage', 'unique_ips', 'unique_dsps']], 
+                st.dataframe(sivt_display[['mismatch_type', 'event_count', 'unique_ips', 'unique_dsps']], 
                            use_container_width=True, hide_index=True)
         else:
-            st.info("No SIVT data available for the selected filters")
+            st.info("No SIVT data available")
         
-        # ============================================
-        # DAILY TRENDS
-        # ============================================
+        # Daily Trends
         st.subheader("📈 Daily Trends: Valid, Invalid (GIVT+SIVT), Unknown")
-        
         if not daily.empty:
             daily_melted = daily.melt(
                 id_vars=['date'], 
                 value_vars=['valid_events', 'invalid_events', 'missing_auction_ids'],
-                var_name='category', 
-                value_name='events'
+                var_name='category', value_name='events'
             )
-            
             category_map = {
                 'valid_events': 'Valid',
                 'invalid_events': 'Invalid (GIVT+SIVT)',
@@ -824,8 +801,7 @@ if page == "📈 Dashboard":
             daily_melted['category'] = daily_melted['category'].map(category_map)
             
             fig = px.bar(daily_melted, x='date', y='events', color='category',
-                        title='Daily Events by Category',
-                        barmode='stack',
+                        title='Daily Events by Category', barmode='stack',
                         labels={'events': 'Events', 'date': 'Date', 'category': 'Category'},
                         color_discrete_map={
                             'Valid': '#2ecc71',
@@ -833,101 +809,33 @@ if page == "📈 Dashboard":
                             'Unknown': '#95a5a6'
                         })
             st.plotly_chart(fig, use_container_width=True)
-            
-            daily_display = daily.copy()
-            if 'date' in daily_display.columns:
-                daily_display['date'] = pd.to_datetime(daily_display['date']).dt.strftime('%Y-%m-%d')
-            
-            display_cols = ['date', 'total_events', 'valid_events', 'invalid_events', 'missing_auction_ids', 
-                           'givt_events', 'sivt_events', 'valid_pct', 'invalid_pct', 'unknown_pct', 'givt_pct', 'sivt_pct']
-            display_cols = [c for c in display_cols if c in daily_display.columns]
-            if display_cols:
-                daily_display = daily_display[display_cols]
-                daily_display.columns = ['Date', 'Total', 'Valid', 'Invalid (GIVT+SIVT)', 'Unknown', 
-                                        'GIVT', 'SIVT', 'Valid %', 'Invalid %', 'Unknown %', 'GIVT %', 'SIVT %']
-                st.dataframe(daily_display, use_container_width=True, hide_index=True)
         else:
-            st.info("No daily data available for the selected filters")
+            st.info("No daily data available")
         
-        # ============================================
-        # SIVT DETECTION
-        # ============================================
-        st.subheader("🔍 SIVT Detection — Device Mismatch")
-        st.markdown("""
-        <div style="background-color: #fff3cd; border-left: 4px solid #f39c12; padding: 10px; border-radius: 4px; margin-bottom: 15px;">
-        <strong>📋 Methodology Note:</strong> SIVT = <strong>Device Mismatch only</strong> (directly verifiable from raw data). 
-        Multi-Device, Volume, and Overnight detections were evaluated and moved to the production roadmap as future enhancements.
-        </div>
-        """, unsafe_allow_html=True)
-        
-        if not sivt_breakdown.empty and sivt_breakdown['event_count'].sum() > 0:
-            total_sivt = sivt_breakdown['event_count'].sum()
-            st.warning(f"⚠️ Found {total_sivt:,.0f} SIVT events (Device Mismatches)")
-            st.metric("Total SIVT Events", f"{total_sivt:,.0f}")
-            
-            st.write("**Breakdown by Mismatch Type:**")
-            breakdown_display = sivt_breakdown.copy()
-            breakdown_display['percentage'] = breakdown_display['event_count'].apply(
-                lambda x: f"{x/total_sivt*100:.2f}%"
-            )
-            st.dataframe(breakdown_display[['mismatch_type', 'event_count', 'percentage', 'unique_ips', 'unique_dsps']], 
-                        use_container_width=True, hide_index=True)
-            
-            with st.expander("📋 Top 50 Detailed Mismatches (Sample)"):
-                device_mismatch, dm_records, dm_events = get_device_mismatch_data(selected_dsp, selected_exchange, selected_app, selected_device, min_date_str, max_date_str)
-                if device_mismatch is not None and not device_mismatch.empty:
-                    display_cols = ['ip', 'dsp_id', 'detected_category', 'reported_category', 'mismatch_count', 'severity']
-                    dm_display = device_mismatch[display_cols].copy()
-                    dm_display.columns = ['IP', 'DSP', 'Detected', 'Reported', 'Events', 'Severity']
-                    st.dataframe(dm_display, use_container_width=True, hide_index=True)
-                else:
-                    st.info("No detailed mismatch records available for the selected filters")
-        else:
-            st.success("✅ No device category mismatches detected for the selected filters.")
-        
-        # ============================================
-        # DSP RANKINGS
-        # ============================================
+        # DSP Rankings
         st.subheader("🏢 DSP Rankings")
         if not dsp.empty:
-            dsp_display = dsp.copy()
-            dsp_display = dsp_display[['dsp_id', 'total_events', 'valid_events', 'invalid_events', 'missing_auction_ids',
-                                      'givt_events', 'sivt_events', 'valid_pct', 'invalid_pct', 'unknown_pct', 'givt_pct', 'sivt_pct']]
-            dsp_display.columns = ['DSP ID', 'Total', 'Valid', 'Invalid (GIVT+SIVT)', 'Unknown', 
+            dsp_display = dsp[['dsp_id', 'total_events', 'valid_events', 'invalid_events', 'missing_auction_ids',
+                              'givt_events', 'sivt_events', 'valid_pct', 'invalid_pct', 'unknown_pct', 'givt_pct', 'sivt_pct']].copy()
+            dsp_display.columns = ['DSP ID', 'Total', 'Valid', 'Invalid', 'Unknown', 
                                    'GIVT', 'SIVT', 'Valid %', 'Invalid %', 'Unknown %', 'GIVT %', 'SIVT %']
             st.dataframe(dsp_display, use_container_width=True, hide_index=True)
         else:
-            st.info("No DSP data available for the selected filters")
+            st.info("No DSP data available")
         
-        # ============================================
-        # EXCHANGE RANKINGS
-        # ============================================
+        # Exchange Rankings
         st.subheader("🔄 Exchange Rankings")
         if not exchanges.empty:
-            exchange_display = exchanges.copy()
-            exchange_display = exchange_display[['exchange_id', 'total_events', 'valid_events', 'invalid_events', 'missing_auction_ids',
-                                                 'givt_events', 'sivt_events', 'valid_pct', 'invalid_pct', 'unknown_pct', 'givt_pct', 'sivt_pct']]
-            exchange_display.columns = ['Exchange ID', 'Total', 'Valid', 'Invalid (GIVT+SIVT)', 'Unknown',
+            exchange_display = exchanges[['exchange_id', 'total_events', 'valid_events', 'invalid_events', 'missing_auction_ids',
+                                         'givt_events', 'sivt_events', 'valid_pct', 'invalid_pct', 'unknown_pct', 'givt_pct', 'sivt_pct']].copy()
+            exchange_display.columns = ['Exchange ID', 'Total', 'Valid', 'Invalid', 'Unknown',
                                         'GIVT', 'SIVT', 'Valid %', 'Invalid %', 'Unknown %', 'GIVT %', 'SIVT %']
             st.dataframe(exchange_display, use_container_width=True, hide_index=True)
         else:
-            st.info("No exchange data available for the selected filters")
-        
-        # ============================================
-        # FOOTER
-        # ============================================
-        st.info("""
-        **📊 Data Architecture:**
-        - All metrics calculated from `normalized_devices` view with filters applied
-        - Device filter now uses raw Peer39 device types (`p39_device_type`) for filtering
-        - All reporting uses `detected_category` for categorized device type analysis
-        - SIVT = Device Mismatch only (directly verifiable per event)
-        - Categories are mutually exclusive: Valid + Invalid + Unknown = Total
-        - Multi-Device, Volume, and Overnight moved to production roadmap (see Findings page)
-        """)
+            st.info("No exchange data available")
         
     except Exception as e:
-        st.error(f"Error loading dashboard data: {e}")
+        st.error(f"Error loading dashboard: {e}")
         st.exception(e)
 
 # ============================================
@@ -935,10 +843,9 @@ if page == "📈 Dashboard":
 # ============================================
 elif page == "📋 Methodology & MRC":
     st.title("📋 Methodology & MRC Reference Points")
-
+    
     summary = get_filtered_summary(selected_dsp, selected_exchange, selected_app, selected_device, min_date_str, max_date_str)
-    sivt_breakdown = get_sivt_breakdown(selected_dsp, selected_exchange, selected_app, selected_device, min_date_str, max_date_str)
-
+    
     if not summary.empty:
         total_events = summary['total_events'].iloc[0]
         givt = summary['givt_events'].iloc[0]
@@ -946,46 +853,47 @@ elif page == "📋 Methodology & MRC":
         unknown = summary['missing_auction_ids'].iloc[0]
         datacenter = summary['datacenter_traffic'].iloc[0]
         invalid_event_count = summary['invalid_event_count'].iloc[0]
-
+        
         invalid = givt + sivt_total
         valid = total_events - invalid - unknown
-
+        
         valid_pct = (valid / total_events * 100) if total_events > 0 else 0
         invalid_pct = (invalid / total_events * 100) if total_events > 0 else 0
         unknown_pct = (unknown / total_events * 100) if total_events > 0 else 0
         givt_pct = (givt / total_events * 100) if total_events > 0 else 0
         sivt_pct = (sivt_total / total_events * 100) if total_events > 0 else 0
-
+        
         st.markdown(f"""
-        ## 🎯 1. Fraud Definition (MRC-Compliant)
-
-        Following the **MRC Invalid Traffic Detection and Filtration Standards (2020)** and the **MRC CTV/Advanced TV Reference Document**, we define **Invalid Traffic (IVT)** as traffic that cannot be validated as coming from a real user watching real content on a real TV.
-
-        ---
-
-        ## 📊 2. Traffic Classification Framework
-
+        ## 🎯 Fraud Definition (MRC-Compliant)
+        
+        Following the MRC Invalid Traffic Detection and Filtration Standards, we define Invalid Traffic (IVT) as traffic that cannot be validated as coming from a real user watching real content on a real TV.
+        
+        ## 📊 Traffic Classification Framework
+        
         | Classification | Definition | Treatment |
         |----------------|------------|-----------|
-        | **Valid Traffic** | Events confirmed to come from real users on real devices | Counted as valid impressions |
-        | **Invalid Traffic (IVT)** | Events confirmed to be invalid through GIVT or SIVT detection | Removed from reporting |
-        | **Unknown** | Events that cannot be validated (measurement limitations) | Excluded, separately disclosed |
-
-        ---
-
-        ## 📊 3. Current Data Summary
-        """)
-
-        st.markdown(f"""
+        | **Valid Traffic** | Events confirmed from real users on real devices | Counted as valid impressions |
+        | **Invalid Traffic (IVT)** | GIVT or SIVT detected | Removed from reporting |
+        | **Unknown** | Cannot be validated | Excluded, separately disclosed |
+        
+        ### GIVT Detection
+        - **Datacenter Traffic**: IP addresses from cloud provider ranges
+        - **Invalid Events**: Events with null/'None' event types
+        
+        ### SIVT Detection
+        - **Device Category Mismatch**: Detected vs reported device type differs
+        
+        ## 📊 Current Data Summary
+        
         | Category | Events | Percentage | Treatment |
         |----------|--------|------------|-----------|
-        | ✅ **Valid Traffic** | {valid:,.0f} | {valid_pct:.2f}% | Counted as valid impressions |
-        | ❌ **Invalid (GIVT+SIVT)** | {invalid:,.0f} | {invalid_pct:.2f}% | Removed from reporting |
+        | ✅ Valid Traffic | {valid:,.0f} | {valid_pct:.2f}% | Counted as valid |
+        | ❌ Invalid (GIVT+SIVT) | {invalid:,.0f} | {invalid_pct:.2f}% | Removed |
         | ├─ GIVT | {givt:,.0f} | {givt_pct:.2f}% | Routine filtration |
         | │  ├─ Datacenter | {datacenter:,.0f} | {datacenter/total_events*100:.2f}% | |
         | │  └─ Invalid Events | {invalid_event_count:,.0f} | {invalid_event_count/total_events*100:.2f}% | |
-        | └─ SIVT (Device Mismatch) | {sivt_total:,.0f} | {sivt_pct:.2f}% | Advanced analytics |
-        | ❓ **Unknown** | {unknown:,.0f} | {unknown_pct:.2f}% | Excluded, separately disclosed |
+        | └─ SIVT | {sivt_total:,.0f} | {sivt_pct:.2f}% | Advanced analytics |
+        | ❓ Unknown | {unknown:,.0f} | {unknown_pct:.2f}% | Excluded |
         """)
     else:
         st.info("No data available for the selected filters")
@@ -995,46 +903,47 @@ elif page == "📋 Methodology & MRC":
 # ============================================
 elif page == "🔍 Findings & Recommendations":
     st.title("🔍 Findings & Recommendations")
-
+    
     summary = get_filtered_summary(selected_dsp, selected_exchange, selected_app, selected_device, min_date_str, max_date_str)
-    dsp = get_filtered_dsp(selected_dsp, selected_exchange, selected_app, selected_device, min_date_str, max_date_str)
-    sivt_breakdown = get_sivt_breakdown(selected_dsp, selected_exchange, selected_app, selected_device, min_date_str, max_date_str)
-
+    dsp_data = get_filtered_dsp(selected_dsp, selected_exchange, selected_app, selected_device, min_date_str, max_date_str)
+    
     if not summary.empty:
         total_events = summary['total_events'].iloc[0]
         givt = summary['givt_events'].iloc[0]
         sivt_total = summary['sivt_events'].iloc[0]
         unknown = summary['missing_auction_ids'].iloc[0]
-        datacenter = summary['datacenter_traffic'].iloc[0]
-        invalid_event_count = summary['invalid_event_count'].iloc[0]
-
+        
         invalid = givt + sivt_total
         valid = total_events - invalid - unknown
-
-        givt_rate = (givt / total_events * 100) if total_events > 0 else 0
-        sivt_rate = (sivt_total / total_events * 100) if total_events > 0 else 0
-        unknown_rate = (unknown / total_events * 100) if total_events > 0 else 0
-        invalid_rate = (invalid / total_events * 100) if total_events > 0 else 0
-
+        
         st.markdown(f"""
         ## 📊 Executive Summary
-
+        
         | Metric | Value |
         |--------|-------|
         | Data Analyzed | {total_events:,} events |
-        | **Valid Traffic** | {valid:,.0f} events ({valid/total_events*100:.2f}%) |
-        | **Invalid (GIVT+SIVT)** | {invalid:,.0f} events ({invalid_rate:.2f}%) |
-        | ├─ GIVT | {givt:,.0f} events ({givt_rate:.2f}%) |
-        | └─ SIVT (Device Mismatch) | {sivt_total:,.0f} events ({sivt_rate:.2f}%) |
-        | **Unknown** | {unknown:,.0f} events ({unknown_rate:.2f}%) |
+        | Valid Traffic | {valid:,.0f} ({valid/total_events*100:.2f}%) |
+        | Invalid (GIVT+SIVT) | {invalid:,.0f} ({invalid/total_events*100:.2f}%) |
+        | Unknown | {unknown:,.0f} ({unknown/total_events*100:.2f}%) |
         """)
-
-        if not dsp.empty:
-            fraudulent_dsps = dsp[dsp['givt_pct'] == 100]
+        
+        if not dsp_data.empty:
+            fraudulent_dsps = dsp_data[dsp_data['givt_pct'] == 100]
             if not fraudulent_dsps.empty:
                 st.subheader("🚨 DSPs with 100% GIVT")
                 for _, row in fraudulent_dsps.iterrows():
-                    st.error(f"**DSP {row['dsp_id']}** — {row['total_events']:,.0f} events — {row['givt_pct']:.0f}% GIVT — **BLOCK IMMEDIATELY**")
+                    st.error(f"**DSP {row['dsp_id']}** — {row['total_events']:,.0f} events — {row['givt_pct']:.0f}% GIVT — BLOCK IMMEDIATELY")
+        
+        st.markdown("""
+        ## 🚀 Production Roadmap
+        
+        | Phase | Timeline | Actions |
+        |-------|----------|---------|
+        | Phase 1 | Week 1 | Block 100% GIVT DSPs, Block datacenter IPs |
+        | Phase 2 | Month 1 | Fix auction ID pass-through, SIVT monitoring |
+        | Phase 3 | Month 2 | Device verification pre-bid, SSAI validation |
+        | Phase 4 | Month 3 | Multi-Device detection, Volume detection |
+        """)
     else:
         st.info("No data available for the selected filters")
 
@@ -1043,100 +952,56 @@ elif page == "🔍 Findings & Recommendations":
 # ============================================
 else:
     st.title("🔎 Trace a Case — End-to-End Audit")
-    st.markdown("""
-    ### How to use this page:
-    1. Select a flagged IP from the list below (or enter one manually)
-    2. Review the **fraud reasoning** — why was this IP flagged?
-    3. Review the **sample events** — see the raw data that led to the flag
-    4. Verify the classification matches the reasoning
-    """)
-
+    st.markdown("Select a flagged IP to trace the fraud reasoning end-to-end.")
+    
     traceable_ips = get_traceable_ips(200)
-
+    
     if not traceable_ips.empty:
         col1, col2 = st.columns([1, 2])
-
+        
         with col1:
-            st.subheader("📋 Select an IP to Trace")
             classifications = ['All'] + traceable_ips['classification'].unique().tolist()
             selected_class = st.selectbox("Filter by Classification", classifications)
-
+            
             if selected_class != 'All':
                 filtered_ips = traceable_ips[traceable_ips['classification'] == selected_class]
             else:
                 filtered_ips = traceable_ips
-
-            st.write(f"**{len(filtered_ips)} IPs available**")
-
+            
             ip_df = filtered_ips.head(50).copy()
             ip_df['label'] = ip_df.apply(lambda x: f"{x['ip']} ({x['classification']}, {x['event_count']:,} events)", axis=1)
-
+            
             selected_ip = st.selectbox("Select IP", ip_df['ip'].tolist(), 
-                                      format_func=lambda x: ip_df[ip_df['ip']==x]['label'].iloc[0] if not ip_df[ip_df['ip']==x].empty else x)
-
-            manual_ip = st.text_input("Or enter IP manually:", placeholder="e.g., 192.168.1.1")
+                                      format_func=lambda x: ip_df[ip_df['ip']==x]['label'].iloc[0])
+            
+            manual_ip = st.text_input("Or enter IP manually:")
             if manual_ip:
                 selected_ip = manual_ip
-
+        
         with col2:
             if selected_ip:
                 st.subheader(f"🔍 Audit: {selected_ip}")
-                st.write("**Step 1: Why was this IP flagged?**")
-
+                
                 reasoning = get_fraud_reasoning(selected_ip)
-
                 if not reasoning.empty:
                     for _, reason in reasoning.iterrows():
                         severity_class = "alert-critical" if reason['score'] >= 3 else "alert-high" if reason['score'] >= 2 else "alert-medium" if reason['score'] >= 1 else "alert-low"
                         st.markdown(f"""
                         <div class="metric-card {severity_class}">
                         <strong>{reason['method']}</strong><br>
-                        <span style="color: #666;">{reason['severity']}</span><br>
+                        {reason['severity']}<br>
                         <small>{reason['details']}</small>
                         </div>
                         """, unsafe_allow_html=True)
                 else:
-                    st.info("This IP was not flagged by any SIVT detection method.")
-
-                st.write("**Step 2: Sample Events for this IP**")
+                    st.info("No SIVT flags for this IP")
+                
                 trace_details = trace_ip_details(selected_ip, selected_class if selected_class != 'All' else 'All')
-
                 if not trace_details.empty:
-                    st.write(f"Showing {len(trace_details)} sample events:")
-
-                    class_breakdown = trace_details['classification'].value_counts().reset_index()
-                    class_breakdown.columns = ['Classification', 'Count']
-                    st.write("**Classification Breakdown:**")
-                    st.dataframe(class_breakdown, use_container_width=True, hide_index=True)
-
-                    display_cols = ['date', 'dsp_id', 'exchange_id', 'p39_device_type', 'detected_device', 'reported_device', 'detected_category', 'reported_category', 'classification']
-                    trace_display = trace_details[display_cols].copy()
-                    trace_display.columns = ['Date', 'DSP', 'Exchange', 'Raw Device Type', 'Detected Device', 'Reported Device', 'Detected Cat.', 'Reported Cat.', 'Classification']
-
-                    st.write("**Raw Event Details (including Peer39 device type):**")
-                    st.dataframe(trace_display, use_container_width=True, hide_index=True)
-
-                    givt_events = len(trace_details[trace_details['classification'].str.contains('GIVT', na=False)])
-                    sivt_events = len(trace_details[trace_details['classification'].str.contains('SIVT', na=False)])
-                    unknown_events = len(trace_details[trace_details['classification'].str.contains('Unknown', na=False)])
-
-                    verify_col1, verify_col2, verify_col3 = st.columns(3)
-                    with verify_col1:
-                        st.metric("GIVT Events", givt_events)
-                    with verify_col2:
-                        st.metric("SIVT Events", sivt_events)
-                    with verify_col3:
-                        st.metric("Unknown Events", unknown_events)
-
-                    if sivt_events > 0:
-                        sivt_samples = trace_details[trace_details['classification'].str.contains('SIVT', na=False)]
-                        if not sivt_samples.empty:
-                            sample = sivt_samples.iloc[0]
-                            st.success(f"✅ **SIVT Verified:** Detected `{sample['detected_category']}` but reported as `{sample['reported_category']}` — Device mismatch confirmed.")
-                else:
-                    st.warning(f"No traceable events found for IP `{selected_ip}`.")
+                    st.write(f"**{len(trace_details)} sample events:**")
+                    st.dataframe(trace_details, use_container_width=True, hide_index=True)
     else:
-        st.warning("No traceability data available. Please run `build_aggregates_v2.py` to generate traceability samples.")
+        st.warning("No traceability data available.")
 
-# Close the database connection
+# Close connection
 conn.close()
