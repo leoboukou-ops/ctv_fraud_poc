@@ -57,7 +57,7 @@ if "Full" in db_choice:
         # Fallback to demo
         st.sidebar.info("Using demo database until download completes")
         db_path = 'fraud_detection.db'
-    elif os.path.getsize(db_path) < 500000000:  # Less than 500MB = likely not full
+    elif os.path.getsize(db_path) < 500000000:
         st.sidebar.warning("Full database appears incomplete, using demo")
         db_path = 'fraud_detection.db'
 else:
@@ -111,12 +111,6 @@ with st.sidebar.expander("🔧 Debug Info", expanded=False):
         dsp_count = conn.execute("SELECT COUNT(DISTINCT dsp_id) FROM normalized_devices").fetchone()[0]
         st.write(f"🏢 Unique DSPs: {dsp_count:,}")
         
-        exchange_count = conn.execute("SELECT COUNT(DISTINCT exchange_id) FROM normalized_devices").fetchone()[0]
-        st.write(f"🔄 Unique Exchanges: {exchange_count:,}")
-        
-        device_count = conn.execute("SELECT COUNT(DISTINCT p39_device_type) FROM normalized_devices WHERE p39_device_type IS NOT NULL AND p39_device_type != ''").fetchone()[0]
-        st.write(f"📱 Unique Device Types: {device_count:,}")
-        
     except Exception as e:
         st.error(f"Debug error: {e}")
 
@@ -156,7 +150,6 @@ max_date_str = max_date.strftime("%Y-%m-%d")
 # ============================================
 @st.cache_data(ttl=3600)
 def get_filter_options():
-    """Get filter options from normalized_devices table."""
     try:
         dsps = conn.execute("SELECT DISTINCT dsp_id FROM normalized_devices WHERE dsp_id IS NOT NULL ORDER BY dsp_id").df()
         exchanges = conn.execute("SELECT DISTINCT exchange_id FROM normalized_devices WHERE exchange_id IS NOT NULL ORDER BY exchange_id").df()
@@ -176,11 +169,9 @@ def get_filter_options():
             'apps': ['All'] + apps['app_name'].tolist() if not apps.empty else ['All'],
             'devices': ['All'] + devices['p39_device_type'].tolist() if not devices.empty else ['All']
         }
-    except Exception as e:
-        st.sidebar.error(f"Error loading filters: {e}")
+    except:
         return {'dsps': ['All'], 'exchanges': ['All'], 'apps': ['All'], 'devices': ['All']}
 
-# Initialize session state for filters
 if 'selected_dsp' not in st.session_state:
     st.session_state.selected_dsp = 'All'
 if 'selected_exchange' not in st.session_state:
@@ -190,39 +181,24 @@ if 'selected_app' not in st.session_state:
 if 'selected_device' not in st.session_state:
     st.session_state.selected_device = 'All'
 
-# Get filter options
 filter_options = get_filter_options()
 
 st.sidebar.header("🎯 Filters")
 
-selected_dsp = st.sidebar.selectbox(
-    "DSP", 
-    filter_options['dsps'],
-    index=filter_options['dsps'].index(st.session_state.selected_dsp) if st.session_state.selected_dsp in filter_options['dsps'] else 0
-)
-selected_exchange = st.sidebar.selectbox(
-    "Exchange", 
-    filter_options['exchanges'],
-    index=filter_options['exchanges'].index(st.session_state.selected_exchange) if st.session_state.selected_exchange in filter_options['exchanges'] else 0
-)
-selected_app = st.sidebar.selectbox(
-    "App Name", 
-    filter_options['apps'],
-    index=filter_options['apps'].index(st.session_state.selected_app) if st.session_state.selected_app in filter_options['apps'] else 0
-)
-selected_device = st.sidebar.selectbox(
-    "Peer39 Device Type", 
-    filter_options['devices'],
-    index=filter_options['devices'].index(st.session_state.selected_device) if st.session_state.selected_device in filter_options['devices'] else 0
-)
+selected_dsp = st.sidebar.selectbox("DSP", filter_options['dsps'],
+    index=filter_options['dsps'].index(st.session_state.selected_dsp) if st.session_state.selected_dsp in filter_options['dsps'] else 0)
+selected_exchange = st.sidebar.selectbox("Exchange", filter_options['exchanges'],
+    index=filter_options['exchanges'].index(st.session_state.selected_exchange) if st.session_state.selected_exchange in filter_options['exchanges'] else 0)
+selected_app = st.sidebar.selectbox("App Name", filter_options['apps'],
+    index=filter_options['apps'].index(st.session_state.selected_app) if st.session_state.selected_app in filter_options['apps'] else 0)
+selected_device = st.sidebar.selectbox("Peer39 Device Type", filter_options['devices'],
+    index=filter_options['devices'].index(st.session_state.selected_device) if st.session_state.selected_device in filter_options['devices'] else 0)
 
-# Update session state
 st.session_state.selected_dsp = selected_dsp
 st.session_state.selected_exchange = selected_exchange
 st.session_state.selected_app = selected_app
 st.session_state.selected_device = selected_device
 
-# Reset button
 st.sidebar.markdown("---")
 if st.sidebar.button("🔄 Reset All Filters"):
     st.session_state.selected_dsp = 'All'
@@ -231,9 +207,6 @@ if st.sidebar.button("🔄 Reset All Filters"):
     st.session_state.selected_device = 'All'
     st.rerun()
 
-# ============================================
-# BUILD FILTER CONDITIONS
-# ============================================
 def build_filter_conditions(dsp, exchange, app, device):
     conditions = []
     if dsp != 'All':
@@ -255,26 +228,30 @@ def show_active_filters():
     if selected_app != 'All':
         filters.append(f"App: {selected_app}")
     if selected_device != 'All':
-        filters.append(f"Peer39 Device: {selected_device}")
+        filters.append(f"Device: {selected_device}")
     if filters:
         st.info(f"🔍 **Active Filters:** " + " | ".join(filters))
 
 # ============================================
-# FILTERED DATA FUNCTIONS
+# FILTERED DATA FUNCTIONS (MUTUALLY EXCLUSIVE CATEGORIES)
 # ============================================
 @st.cache_data(ttl=3600)
 def get_filtered_summary(dsp, exchange, app, device, min_date, max_date):
     where_clause = build_filter_conditions(dsp, exchange, app, device)
     
+    # Mutually exclusive categories:
+    # 1. Unknown: missing auction ID (regardless of anything else)
+    # 2. GIVT: has auction ID + datacenter or invalid event
+    # 3. SIVT: has auction ID + not GIVT + device mismatch
+    # 4. Valid: everything else
     query = f"""
     SELECT 
         COUNT(*) as total_events,
-        SUM(is_datacenter) as datacenter_traffic,
-        SUM(is_invalid_event) as invalid_event_count,
-        SUM(is_missing_auction) as missing_auction_ids,
-        SUM(CASE WHEN is_datacenter = 1 OR is_invalid_event = 1 THEN 1 ELSE 0 END) as givt_events,
-        SUM(is_device_mismatch_sivt) as sivt_events,
-        SUM(CASE WHEN is_datacenter = 1 OR is_invalid_event = 1 OR is_device_mismatch_sivt = 1 THEN 1 ELSE 0 END) as invalid_events,
+        SUM(CASE WHEN is_missing_auction = 1 THEN 1 ELSE 0 END) as unknown_events,
+        SUM(CASE WHEN is_missing_auction = 0 AND is_datacenter = 1 THEN 1 ELSE 0 END) as datacenter_traffic,
+        SUM(CASE WHEN is_missing_auction = 0 AND is_invalid_event = 1 THEN 1 ELSE 0 END) as invalid_event_count,
+        SUM(CASE WHEN is_missing_auction = 0 AND (is_datacenter = 1 OR is_invalid_event = 1) THEN 1 ELSE 0 END) as givt_events,
+        SUM(CASE WHEN is_missing_auction = 0 AND is_datacenter = 0 AND is_invalid_event = 0 AND is_device_mismatch_sivt = 1 THEN 1 ELSE 0 END) as sivt_events,
         COUNT(DISTINCT dsp_id) as total_dsps,
         COUNT(DISTINCT publisher_id) as total_publishers,
         COUNT(DISTINCT exchange_id) as total_exchanges
@@ -296,12 +273,9 @@ def get_filtered_daily(dsp, exchange, app, device, min_date, max_date):
     SELECT 
         prt_dt as date,
         COUNT(*) as total_events,
-        SUM(is_datacenter) as datacenter_traffic,
-        SUM(is_invalid_event) as invalid_event_count,
-        SUM(is_missing_auction) as missing_auction_ids,
-        SUM(CASE WHEN is_datacenter = 1 OR is_invalid_event = 1 THEN 1 ELSE 0 END) as givt_events,
-        SUM(is_device_mismatch_sivt) as sivt_events,
-        SUM(CASE WHEN is_datacenter = 1 OR is_invalid_event = 1 OR is_device_mismatch_sivt = 1 THEN 1 ELSE 0 END) as invalid_events
+        SUM(CASE WHEN is_missing_auction = 1 THEN 1 ELSE 0 END) as unknown_events,
+        SUM(CASE WHEN is_missing_auction = 0 AND (is_datacenter = 1 OR is_invalid_event = 1) THEN 1 ELSE 0 END) as givt_events,
+        SUM(CASE WHEN is_missing_auction = 0 AND is_datacenter = 0 AND is_invalid_event = 0 AND is_device_mismatch_sivt = 1 THEN 1 ELSE 0 END) as sivt_events
     FROM normalized_devices
     WHERE prt_dt BETWEEN '{min_date}' AND '{max_date}'
     AND {where_clause}
@@ -313,11 +287,12 @@ def get_filtered_daily(dsp, exchange, app, device, min_date, max_date):
         if df.empty:
             return df
         
-        df['valid_events'] = df['total_events'] - df['invalid_events'] - df['missing_auction_ids']
+        df['invalid_events'] = df['givt_events'] + df['sivt_events']
+        df['valid_events'] = df['total_events'] - df['invalid_events'] - df['unknown_events']
         df['givt_pct'] = (df['givt_events'] / df['total_events'] * 100).round(2)
         df['sivt_pct'] = (df['sivt_events'] / df['total_events'] * 100).round(2)
         df['invalid_pct'] = (df['invalid_events'] / df['total_events'] * 100).round(2)
-        df['unknown_pct'] = (df['missing_auction_ids'] / df['total_events'] * 100).round(2)
+        df['unknown_pct'] = (df['unknown_events'] / df['total_events'] * 100).round(2)
         df['valid_pct'] = (df['valid_events'] / df['total_events'] * 100).round(2)
         
         return df
@@ -328,20 +303,15 @@ def get_filtered_daily(dsp, exchange, app, device, min_date, max_date):
 @st.cache_data(ttl=3600)
 def get_filtered_dsp(dsp, exchange, app, device, min_date, max_date):
     where_clause = build_filter_conditions(dsp, exchange, app, device)
-    
     dsp_filter = f"AND dsp_id = '{dsp}'" if dsp != 'All' else ""
     
     query = f"""
     SELECT 
         dsp_id,
         COUNT(*) as total_events,
-        SUM(is_datacenter) as datacenter_traffic,
-        SUM(is_invalid_event) as invalid_event_count,
-        SUM(is_missing_auction) as missing_auction_ids,
-        SUM(CASE WHEN is_datacenter = 1 OR is_invalid_event = 1 THEN 1 ELSE 0 END) as givt_events,
-        SUM(is_device_mismatch_sivt) as sivt_events,
-        SUM(CASE WHEN is_datacenter = 1 OR is_invalid_event = 1 OR is_device_mismatch_sivt = 1 THEN 1 ELSE 0 END) as invalid_events,
-        COUNT(DISTINCT geo_ip_0) as unique_ips
+        SUM(CASE WHEN is_missing_auction = 1 THEN 1 ELSE 0 END) as unknown_events,
+        SUM(CASE WHEN is_missing_auction = 0 AND (is_datacenter = 1 OR is_invalid_event = 1) THEN 1 ELSE 0 END) as givt_events,
+        SUM(CASE WHEN is_missing_auction = 0 AND is_datacenter = 0 AND is_invalid_event = 0 AND is_device_mismatch_sivt = 1 THEN 1 ELSE 0 END) as sivt_events
     FROM normalized_devices
     WHERE prt_dt BETWEEN '{min_date}' AND '{max_date}'
     AND dsp_id IS NOT NULL
@@ -356,11 +326,12 @@ def get_filtered_dsp(dsp, exchange, app, device, min_date, max_date):
         if df.empty:
             return df
         
-        df['valid_events'] = df['total_events'] - df['invalid_events'] - df['missing_auction_ids']
+        df['invalid_events'] = df['givt_events'] + df['sivt_events']
+        df['valid_events'] = df['total_events'] - df['invalid_events'] - df['unknown_events']
         df['givt_pct'] = (df['givt_events'] / df['total_events'] * 100).round(2)
         df['sivt_pct'] = (df['sivt_events'] / df['total_events'] * 100).round(2)
         df['invalid_pct'] = (df['invalid_events'] / df['total_events'] * 100).round(2)
-        df['unknown_pct'] = (df['missing_auction_ids'] / df['total_events'] * 100).round(2)
+        df['unknown_pct'] = (df['unknown_events'] / df['total_events'] * 100).round(2)
         df['valid_pct'] = (df['valid_events'] / df['total_events'] * 100).round(2)
         
         return df
@@ -371,20 +342,15 @@ def get_filtered_dsp(dsp, exchange, app, device, min_date, max_date):
 @st.cache_data(ttl=3600)
 def get_filtered_exchange(dsp, exchange, app, device, min_date, max_date):
     where_clause = build_filter_conditions(dsp, exchange, app, device)
-    
     exchange_filter = f"AND exchange_id = '{exchange}'" if exchange != 'All' else ""
     
     query = f"""
     SELECT 
         exchange_id,
         COUNT(*) as total_events,
-        SUM(is_datacenter) as datacenter_traffic,
-        SUM(is_invalid_event) as invalid_event_count,
-        SUM(is_missing_auction) as missing_auction_ids,
-        SUM(CASE WHEN is_datacenter = 1 OR is_invalid_event = 1 THEN 1 ELSE 0 END) as givt_events,
-        SUM(is_device_mismatch_sivt) as sivt_events,
-        SUM(CASE WHEN is_datacenter = 1 OR is_invalid_event = 1 OR is_device_mismatch_sivt = 1 THEN 1 ELSE 0 END) as invalid_events,
-        COUNT(DISTINCT geo_ip_0) as unique_ips
+        SUM(CASE WHEN is_missing_auction = 1 THEN 1 ELSE 0 END) as unknown_events,
+        SUM(CASE WHEN is_missing_auction = 0 AND (is_datacenter = 1 OR is_invalid_event = 1) THEN 1 ELSE 0 END) as givt_events,
+        SUM(CASE WHEN is_missing_auction = 0 AND is_datacenter = 0 AND is_invalid_event = 0 AND is_device_mismatch_sivt = 1 THEN 1 ELSE 0 END) as sivt_events
     FROM normalized_devices
     WHERE prt_dt BETWEEN '{min_date}' AND '{max_date}'
     AND exchange_id IS NOT NULL
@@ -400,11 +366,12 @@ def get_filtered_exchange(dsp, exchange, app, device, min_date, max_date):
         if df.empty:
             return df
         
-        df['valid_events'] = df['total_events'] - df['invalid_events'] - df['missing_auction_ids']
+        df['invalid_events'] = df['givt_events'] + df['sivt_events']
+        df['valid_events'] = df['total_events'] - df['invalid_events'] - df['unknown_events']
         df['givt_pct'] = (df['givt_events'] / df['total_events'] * 100).round(2)
         df['sivt_pct'] = (df['sivt_events'] / df['total_events'] * 100).round(2)
         df['invalid_pct'] = (df['invalid_events'] / df['total_events'] * 100).round(2)
-        df['unknown_pct'] = (df['missing_auction_ids'] / df['total_events'] * 100).round(2)
+        df['unknown_pct'] = (df['unknown_events'] / df['total_events'] * 100).round(2)
         df['valid_pct'] = (df['valid_events'] / df['total_events'] * 100).round(2)
         
         return df
@@ -426,6 +393,9 @@ def get_sivt_breakdown(dsp, exchange, app, device, min_date, max_date):
         COUNT(DISTINCT dsp_id) as unique_dsps
     FROM normalized_devices
     WHERE is_device_mismatch_sivt = 1
+    AND is_missing_auction = 0
+    AND is_datacenter = 0
+    AND is_invalid_event = 0
     AND prt_dt BETWEEN '{min_date}' AND '{max_date}'
     AND {where_clause}
     GROUP BY detected_category, reported_category
@@ -433,8 +403,7 @@ def get_sivt_breakdown(dsp, exchange, app, device, min_date, max_date):
     """
     try:
         return conn.execute(query).df()
-    except Exception as e:
-        st.error(f"SIVT breakdown error: {e}")
+    except:
         return pd.DataFrame()
 
 @st.cache_data(ttl=3600)
@@ -444,18 +413,16 @@ def get_givt_breakdown(dsp, exchange, app, device, min_date, max_date):
     query = f"""
     SELECT 
         'Datacenter Traffic' as givt_type,
-        SUM(is_datacenter) as event_count
+        SUM(CASE WHEN is_missing_auction = 0 AND is_datacenter = 1 THEN 1 ELSE 0 END) as event_count
     FROM normalized_devices
-    WHERE is_datacenter = 1
-    AND prt_dt BETWEEN '{min_date}' AND '{max_date}'
+    WHERE prt_dt BETWEEN '{min_date}' AND '{max_date}'
     AND {where_clause}
     UNION ALL
     SELECT 
         'Invalid Event (None/Null)' as givt_type,
-        SUM(is_invalid_event) as event_count
+        SUM(CASE WHEN is_missing_auction = 0 AND is_invalid_event = 1 THEN 1 ELSE 0 END) as event_count
     FROM normalized_devices
-    WHERE is_invalid_event = 1
-    AND prt_dt BETWEEN '{min_date}' AND '{max_date}'
+    WHERE prt_dt BETWEEN '{min_date}' AND '{max_date}'
     AND {where_clause}
     """
     try:
@@ -463,49 +430,8 @@ def get_givt_breakdown(dsp, exchange, app, device, min_date, max_date):
         if df.empty:
             return pd.DataFrame(columns=['givt_type', 'event_count'])
         return df
-    except Exception as e:
-        st.error(f"GIVT breakdown error: {e}")
+    except:
         return pd.DataFrame(columns=['givt_type', 'event_count'])
-
-@st.cache_data(ttl=3600)
-def get_device_mismatch_data(dsp, exchange, app, device, min_date, max_date):
-    where_clause = build_filter_conditions(dsp, exchange, app, device)
-    
-    count_query = f"""
-    SELECT 
-        COUNT(*) as total_records,
-        COALESCE(SUM(mismatch_count), 0) as total_events
-    FROM device_category_mismatch
-    WHERE ip IN (SELECT DISTINCT geo_ip_0 FROM normalized_devices WHERE {where_clause})
-    """
-    try:
-        result = conn.execute(count_query).fetchone()
-        total_records = result[0] if result else 0
-        total_events = result[1] if result else 0
-    except:
-        total_records = 0
-        total_events = 0
-    
-    query = f"""
-    SELECT 
-        ip,
-        dsp_id,
-        detected_category,
-        reported_category,
-        mismatch_count,
-        days_active,
-        severity,
-        severity_score
-    FROM device_category_mismatch
-    WHERE ip IN (SELECT DISTINCT geo_ip_0 FROM normalized_devices WHERE {where_clause})
-    ORDER BY mismatch_count DESC
-    LIMIT 50
-    """
-    try:
-        df = conn.execute(query).df()
-        return df, total_records, total_events
-    except:
-        return pd.DataFrame(), total_records, total_events
 
 @st.cache_data(ttl=3600)
 def get_device_distribution(dsp, exchange, app, device, min_date, max_date):
@@ -526,8 +452,7 @@ def get_device_distribution(dsp, exchange, app, device, min_date, max_date):
     """
     try:
         return conn.execute(query).df()
-    except Exception as e:
-        st.error(f"Device distribution error: {e}")
+    except:
         return pd.DataFrame()
 
 @st.cache_data(ttl=3600)
@@ -549,8 +474,7 @@ def get_raw_device_types(dsp, exchange, app, device, min_date, max_date):
     """
     try:
         return conn.execute(query).df()
-    except Exception as e:
-        st.error(f"Raw device types error: {e}")
+    except:
         return pd.DataFrame()
 
 @st.cache_data(ttl=3600)
@@ -571,15 +495,12 @@ def trace_ip_details(ip, classification_filter='All'):
     class_filter = f"AND classification = '{classification_filter}'" if classification_filter != 'All' else ""
     try:
         return conn.execute(f"""
-            SELECT 
-                ip, dsp_id, exchange_id, publisher_id, app_name, date,
+            SELECT ip, dsp_id, exchange_id, publisher_id, app_name, date,
                 detected_device, reported_device, detected_category, reported_category,
                 p39_device_type, classification
             FROM traceability_samples
-            WHERE ip = '{ip}'
-            {class_filter}
-            ORDER BY date, classification
-            LIMIT 100
+            WHERE ip = '{ip}' {class_filter}
+            ORDER BY date, classification LIMIT 100
         """).df()
     except:
         return pd.DataFrame()
@@ -621,239 +542,122 @@ if page == "📈 Dashboard":
         raw_device_types = get_raw_device_types(selected_dsp, selected_exchange, selected_app, selected_device, min_date_str, max_date_str)
         
         if not summary.empty:
-            total_events = summary['total_events'].iloc[0]
-            givt = summary['givt_events'].iloc[0]
-            sivt_total = summary['sivt_events'].iloc[0]
-            unknown = summary['missing_auction_ids'].iloc[0]
-            datacenter = summary['datacenter_traffic'].iloc[0]
-            invalid_event_count = summary['invalid_event_count'].iloc[0]
+            total_events = int(summary['total_events'].iloc[0])
+            unknown = int(summary['unknown_events'].iloc[0])
+            givt = int(summary['givt_events'].iloc[0])
+            sivt_total = int(summary['sivt_events'].iloc[0])
+            datacenter = int(summary['datacenter_traffic'].iloc[0])
+            invalid_event_count = int(summary['invalid_event_count'].iloc[0])
         else:
             st.warning("No data found for the selected filters")
-            total_events = givt = sivt_total = unknown = datacenter = invalid_event_count = 0
+            total_events = unknown = givt = sivt_total = datacenter = invalid_event_count = 0
         
         invalid = givt + sivt_total
         valid = total_events - invalid - unknown
         
+        # All percentages should add to 100%
+        valid_rate = (valid / total_events * 100) if total_events > 0 else 0
         givt_rate = (givt / total_events * 100) if total_events > 0 else 0
         sivt_rate = (sivt_total / total_events * 100) if total_events > 0 else 0
         unknown_rate = (unknown / total_events * 100) if total_events > 0 else 0
-        invalid_rate = (invalid / total_events * 100) if total_events > 0 else 0
-        valid_rate = (valid / total_events * 100) if total_events > 0 else 0
+        invalid_rate = givt_rate + sivt_rate
         
         # Metrics Row
         col1, col2, col3, col4, col5, col6 = st.columns(6)
         with col1:
-            st.metric("Total Events", f"{total_events:,}" if total_events > 0 else "0")
+            st.metric("Total Events", f"{total_events:,}")
         with col2:
-            st.metric("Valid Traffic", f"{valid_rate:.2f}%", 
-                     delta=f"{valid:,.0f} events" if valid > 0 else None, delta_color="normal")
+            st.metric("Valid Traffic", f"{valid_rate:.1f}%", delta=f"{valid:,} events", delta_color="normal")
         with col3:
-            st.metric("Invalid (GIVT+SIVT)", f"{invalid_rate:.2f}%", 
-                     delta=f"{invalid:,.0f} events" if invalid > 0 else None, delta_color="inverse")
+            st.metric("Invalid (GIVT+SIVT)", f"{invalid_rate:.1f}%", delta=f"{invalid:,} events", delta_color="inverse")
         with col4:
-            st.metric("GIVT", f"{givt_rate:.2f}%", 
-                     delta=f"{givt:,.0f} events" if givt > 0 else None, delta_color="inverse")
+            st.metric("GIVT", f"{givt_rate:.1f}%", delta=f"{givt:,} events", delta_color="inverse")
         with col5:
-            st.metric("SIVT", f"{sivt_rate:.2f}%", 
-                     delta=f"{sivt_total:,.0f} events" if sivt_total > 0 else None, delta_color="inverse")
+            st.metric("SIVT", f"{sivt_rate:.1f}%", delta=f"{sivt_total:,} events", delta_color="inverse")
         with col6:
-            st.metric("Unknown", f"{unknown_rate:.2f}%", 
-                     delta=f"{unknown:,.0f} events" if unknown > 0 else None, delta_color="off")
+            st.metric("Unknown", f"{unknown_rate:.1f}%", delta=f"{unknown:,} events", delta_color="off")
+        
+        # Verify percentages sum to ~100%
+        total_pct = valid_rate + givt_rate + sivt_rate + unknown_rate
+        if abs(total_pct - 100) > 1:
+            st.warning(f"⚠️ Percentages sum to {total_pct:.1f}% (should be 100%)")
         
         # Critical Alerts
         st.subheader("🚨 Critical Alerts")
         alert_col1, alert_col2 = st.columns(2)
         
         with alert_col1:
-            givt_alerts = []
             if givt > 0:
-                givt_alerts.append(f"**GIVT:** {givt:,.0f} events ({givt_rate:.2f}%)")
-            if datacenter > 0:
-                givt_alerts.append(f"  - Datacenter: {datacenter:,.0f} events")
-            if invalid_event_count > 0:
-                givt_alerts.append(f"  - Invalid Events: {invalid_event_count:,.0f} events")
-            if not dsp.empty:
-                fraudulent_dsps = dsp[dsp['givt_pct'] == 100]
-                for _, row in fraudulent_dsps.iterrows():
-                    givt_alerts.append(f"  - 🚨 DSP {row['dsp_id']}: 100% GIVT ({row['total_events']:,.0f} events)")
-            if givt_alerts:
-                st.error("\n".join(givt_alerts))
+                alerts = [f"**GIVT:** {givt:,} events ({givt_rate:.1f}%)"]
+                if datacenter > 0:
+                    alerts.append(f"  - Datacenter: {datacenter:,}")
+                if invalid_event_count > 0:
+                    alerts.append(f"  - Invalid Events: {invalid_event_count:,}")
+                if not dsp.empty:
+                    fraudulent = dsp[dsp['givt_pct'] == 100]
+                    for _, row in fraudulent.iterrows():
+                        alerts.append(f"  - 🚨 DSP {row['dsp_id']}: 100% GIVT")
+                st.error("\n".join(alerts))
             else:
-                st.success("✅ No GIVT alerts")
+                st.success("✅ No GIVT detected")
         
         with alert_col2:
-            sivt_alerts = []
-            if sivt_total > 0:
-                sivt_alerts.append(f"**SIVT (Device Mismatch):** {sivt_total:,.0f} events ({sivt_rate:.2f}%)")
             if unknown > 0:
-                sivt_alerts.append(f"**Unknown:** {unknown:,.0f} events ({unknown_rate:.2f}%)")
-            if sivt_alerts:
-                st.warning("\n".join(sivt_alerts))
-            else:
-                st.info("✅ No SIVT alerts")
+                st.warning(f"**Unknown:** {unknown:,} events ({unknown_rate:.1f}%)\n  - Missing auction IDs")
+            if sivt_total > 0:
+                st.warning(f"**SIVT:** {sivt_total:,} events ({sivt_rate:.1f}%)")
+            if unknown == 0 and sivt_total == 0:
+                st.success("✅ No SIVT or Unknown")
         
-        # Device Type Distribution
-        st.subheader("📊 Device Type Distribution (Categorized)")
-        if not device_distribution.empty and device_distribution['event_count'].sum() > 0:
-            col1, col2 = st.columns([2, 1])
-            with col1:
-                fig_device = px.pie(device_distribution, values='event_count', names='device_type',
-                                    title='Device Type Distribution (detected_category)',
-                                    color_discrete_sequence=px.colors.qualitative.Set2)
-                fig_device.update_traces(textposition='inside', textinfo='percent+label')
-                st.plotly_chart(fig_device, use_container_width=True)
-            with col2:
-                device_display = device_distribution.copy()
-                device_display['event_count'] = device_display['event_count'].apply(lambda x: f"{x:,}")
-                device_display['percentage'] = device_display['percentage'].apply(lambda x: f"{x:.2f}%")
-                st.dataframe(device_display, use_container_width=True, hide_index=True)
-        else:
-            st.info("No device type data available")
-        
-        # Raw Peer39 Device Types
-        st.subheader("📊 Raw Peer39 Device Type Distribution")
-        if not raw_device_types.empty and raw_device_types['event_count'].sum() > 0:
-            col1, col2 = st.columns([2, 1])
-            with col1:
-                fig_raw = px.bar(raw_device_types.head(20), x='raw_device_type', y='event_count',
-                                title='Top 20 Raw Peer39 Device Types',
-                                labels={'raw_device_type': 'Raw Device Type', 'event_count': 'Events'},
-                                color_discrete_sequence=px.colors.qualitative.Set3)
-                fig_raw.update_xaxes(tickangle=45)
-                st.plotly_chart(fig_raw, use_container_width=True)
-            with col2:
-                raw_display = raw_device_types.head(20).copy()
-                raw_display['event_count'] = raw_display['event_count'].apply(lambda x: f"{x:,}")
-                raw_display['percentage'] = raw_display['percentage'].apply(lambda x: f"{x:.2f}%")
-                raw_display.columns = ['Raw Device Type', 'Events', 'Percentage']
-                st.dataframe(raw_display, use_container_width=True, hide_index=True)
-                st.metric("Total Unique Raw Device Types", len(raw_device_types))
-        else:
-            st.info("No raw Peer39 device types available")
-        
-        # Traffic Classification
+        # Traffic Classification Pie
         st.subheader("📊 Traffic Classification")
-        classification_data = []
-        if valid > 0:
-            classification_data.append({'category': 'Valid Traffic', 'events': int(valid), 'percentage': valid_rate})
-        if givt > 0:
-            classification_data.append({'category': 'GIVT', 'events': int(givt), 'percentage': givt_rate})
-        if sivt_total > 0:
-            classification_data.append({'category': 'SIVT', 'events': int(sivt_total), 'percentage': sivt_rate})
-        if unknown > 0:
-            classification_data.append({'category': 'Unknown', 'events': int(unknown), 'percentage': unknown_rate})
+        pie_data = pd.DataFrame([
+            {'Category': 'Valid', 'Events': valid, 'Pct': valid_rate},
+            {'Category': 'GIVT', 'Events': givt, 'Pct': givt_rate},
+            {'Category': 'SIVT', 'Events': sivt_total, 'Pct': sivt_rate},
+            {'Category': 'Unknown', 'Events': unknown, 'Pct': unknown_rate}
+        ])
+        pie_data = pie_data[pie_data['Events'] > 0]
         
-        classification = pd.DataFrame(classification_data)
-        
-        col1, col2 = st.columns([2, 1])
-        with col1:
-            if not classification.empty and classification['events'].sum() > 0:
-                fig = px.pie(classification, values='events', names='category', 
-                             title='Traffic Classification',
-                             color_discrete_sequence=['#2ecc71', '#e74c3c', '#f39c12', '#95a5a6'])
+        if not pie_data.empty:
+            col1, col2 = st.columns([2, 1])
+            with col1:
+                fig = px.pie(pie_data, values='Events', names='Category', title='Traffic Classification',
+                            color_discrete_sequence=['#2ecc71', '#e74c3c', '#f39c12', '#95a5a6'])
                 fig.update_traces(textposition='inside', textinfo='percent+label')
                 st.plotly_chart(fig, use_container_width=True)
-        with col2:
-            if not classification.empty:
-                display_df = classification.copy()
-                display_df['events'] = display_df['events'].apply(lambda x: f"{x:,}")
-                display_df['percentage'] = display_df['percentage'].apply(lambda x: f"{x:.2f}%")
-                st.dataframe(display_df, use_container_width=True, hide_index=True)
-        
-        # GIVT Breakdown
-        st.subheader("🛑 GIVT Breakdown")
-        if not givt_breakdown.empty and givt_breakdown['event_count'].sum() > 0 and givt > 0:
-            col1, col2 = st.columns([2, 1])
-            with col1:
-                fig_givt = px.pie(givt_breakdown, values='event_count', names='givt_type',
-                                  title='GIVT by Type',
-                                  color_discrete_sequence=['#e74c3c', '#c0392b'])
-                fig_givt.update_traces(textposition='inside', textinfo='percent+label')
-                st.plotly_chart(fig_givt, use_container_width=True)
             with col2:
-                givt_display = givt_breakdown.copy()
-                givt_display['event_count'] = givt_display['event_count'].apply(lambda x: f"{x:,}")
-                st.dataframe(givt_display, use_container_width=True, hide_index=True)
-        else:
-            st.info("No GIVT data available")
-        
-        # SIVT Breakdown
-        st.subheader("🔄 SIVT Breakdown (Device Mismatch)")
-        if not sivt_breakdown.empty and sivt_breakdown['event_count'].sum() > 0 and sivt_total > 0:
-            col1, col2 = st.columns([2, 1])
-            with col1:
-                fig_sivt = px.pie(sivt_breakdown, values='event_count', names='mismatch_type',
-                                  title='SIVT by Mismatch Type',
-                                  color_discrete_sequence=px.colors.qualitative.Set2)
-                fig_sivt.update_traces(textposition='inside', textinfo='percent+label')
-                st.plotly_chart(fig_sivt, use_container_width=True)
-            with col2:
-                sivt_display = sivt_breakdown.copy()
-                sivt_display['event_count'] = sivt_display['event_count'].apply(lambda x: f"{x:,}")
-                st.dataframe(sivt_display[['mismatch_type', 'event_count', 'unique_ips', 'unique_dsps']], 
-                           use_container_width=True, hide_index=True)
-        else:
-            st.info("No SIVT data available")
+                st.dataframe(pie_data, use_container_width=True, hide_index=True)
         
         # Daily Trends
-        st.subheader("📈 Daily Trends: Valid, Invalid (GIVT+SIVT), Unknown")
+        st.subheader("📈 Daily Trends")
         if not daily.empty:
-            daily_melted = daily.melt(
-                id_vars=['date'], 
-                value_vars=['valid_events', 'invalid_events', 'missing_auction_ids'],
-                var_name='category', value_name='events'
-            )
-            category_map = {
-                'valid_events': 'Valid',
-                'invalid_events': 'Invalid (GIVT+SIVT)',
-                'missing_auction_ids': 'Unknown'
-            }
-            daily_melted['category'] = daily_melted['category'].map(category_map)
+            daily_melted = daily.melt(id_vars=['date'], 
+                value_vars=['valid_events', 'givt_events', 'sivt_events', 'unknown_events'],
+                var_name='category', value_name='events')
+            daily_melted['category'] = daily_melted['category'].map({
+                'valid_events': 'Valid', 'givt_events': 'GIVT',
+                'sivt_events': 'SIVT', 'unknown_events': 'Unknown'
+            })
             
             fig = px.bar(daily_melted, x='date', y='events', color='category',
                         title='Daily Events by Category', barmode='stack',
-                        labels={'events': 'Events', 'date': 'Date', 'category': 'Category'},
-                        color_discrete_map={
-                            'Valid': '#2ecc71',
-                            'Invalid (GIVT+SIVT)': '#e74c3c',
-                            'Unknown': '#95a5a6'
-                        })
+                        color_discrete_map={'Valid': '#2ecc71', 'GIVT': '#e74c3c', 'SIVT': '#f39c12', 'Unknown': '#95a5a6'})
             st.plotly_chart(fig, use_container_width=True)
-        else:
-            st.info("No daily data available")
-        
-        # SIVT Detection
-        st.subheader("🔍 SIVT Detection — Device Mismatch")
-        if not sivt_breakdown.empty and sivt_breakdown['event_count'].sum() > 0:
-            total_sivt = sivt_breakdown['event_count'].sum()
-            st.warning(f"⚠️ Found {total_sivt:,.0f} SIVT events (Device Mismatches)")
-            
-            with st.expander("📋 Top 50 Detailed Mismatches"):
-                device_mismatch, dm_records, dm_events = get_device_mismatch_data(selected_dsp, selected_exchange, selected_app, selected_device, min_date_str, max_date_str)
-                if device_mismatch is not None and not device_mismatch.empty:
-                    dm_display = device_mismatch[['ip', 'dsp_id', 'detected_category', 'reported_category', 'mismatch_count', 'severity']].copy()
-                    dm_display.columns = ['IP', 'DSP', 'Detected', 'Reported', 'Events', 'Severity']
-                    st.dataframe(dm_display, use_container_width=True, hide_index=True)
-        else:
-            st.success("✅ No device category mismatches detected")
         
         # DSP Rankings
         st.subheader("🏢 DSP Rankings")
         if not dsp.empty:
-            dsp_display = dsp[['dsp_id', 'total_events', 'valid_events', 'invalid_events', 'givt_events', 'sivt_events', 'valid_pct', 'invalid_pct', 'givt_pct', 'sivt_pct']].copy()
-            dsp_display.columns = ['DSP ID', 'Total', 'Valid', 'Invalid', 'GIVT', 'SIVT', 'Valid %', 'Invalid %', 'GIVT %', 'SIVT %']
+            dsp_display = dsp[['dsp_id', 'total_events', 'valid_events', 'givt_events', 'sivt_events', 'unknown_events', 'valid_pct', 'givt_pct', 'sivt_pct', 'unknown_pct']].copy()
+            dsp_display.columns = ['DSP', 'Total', 'Valid', 'GIVT', 'SIVT', 'Unknown', 'Valid%', 'GIVT%', 'SIVT%', 'Unknown%']
             st.dataframe(dsp_display, use_container_width=True, hide_index=True)
-        else:
-            st.info("No DSP data available")
         
         # Exchange Rankings
         st.subheader("🔄 Exchange Rankings")
         if not exchanges.empty:
-            exchange_display = exchanges[['exchange_id', 'total_events', 'valid_events', 'invalid_events', 'givt_events', 'sivt_events', 'valid_pct', 'invalid_pct', 'givt_pct', 'sivt_pct']].copy()
-            exchange_display.columns = ['Exchange ID', 'Total', 'Valid', 'Invalid', 'GIVT', 'SIVT', 'Valid %', 'Invalid %', 'GIVT %', 'SIVT %']
-            st.dataframe(exchange_display, use_container_width=True, hide_index=True)
-        else:
-            st.info("No exchange data available")
+            ex_display = exchanges[['exchange_id', 'total_events', 'valid_events', 'givt_events', 'sivt_events', 'unknown_events', 'valid_pct', 'givt_pct', 'sivt_pct', 'unknown_pct']].copy()
+            ex_display.columns = ['Exchange', 'Total', 'Valid', 'GIVT', 'SIVT', 'Unknown', 'Valid%', 'GIVT%', 'SIVT%', 'Unknown%']
+            st.dataframe(ex_display, use_container_width=True, hide_index=True)
         
     except Exception as e:
         st.error(f"Error loading dashboard: {e}")
@@ -868,38 +672,37 @@ elif page == "📋 Methodology & MRC":
     summary = get_filtered_summary(selected_dsp, selected_exchange, selected_app, selected_device, min_date_str, max_date_str)
     
     if not summary.empty:
-        total_events = summary['total_events'].iloc[0]
-        givt = summary['givt_events'].iloc[0]
-        sivt_total = summary['sivt_events'].iloc[0]
-        unknown = summary['missing_auction_ids'].iloc[0]
+        total = int(summary['total_events'].iloc[0])
+        unknown = int(summary['unknown_events'].iloc[0])
+        givt = int(summary['givt_events'].iloc[0])
+        sivt = int(summary['sivt_events'].iloc[0])
+        valid = total - unknown - givt - sivt
         
         st.markdown(f"""
         ## 🎯 Fraud Definition (MRC-Compliant)
         
-        Following MRC standards, Invalid Traffic (IVT) is traffic that cannot be validated as coming from a real user watching real content on a real TV.
+        Following MRC standards, Invalid Traffic (IVT) is traffic that cannot be validated as coming from a real user on a real device.
         
-        ## 📊 Classification Framework
+        ## 📊 Mutually Exclusive Classification
         
-        | Classification | Treatment |
-        |----------------|-----------|
-        | **Valid** | Counted as valid impressions |
-        | **Invalid (GIVT+SIVT)** | Removed from reporting |
-        | **Unknown** | Excluded, separately disclosed |
+        Categories are applied in priority order to ensure no overlap:
         
-        ### GIVT Detection
-        - Datacenter Traffic
-        - Invalid Events (None/Null)
-        
-        ### SIVT Detection
-        - Device Category Mismatch
+        | Priority | Category | Criteria |
+        |----------|----------|----------|
+        | 1 | **Unknown** | Missing auction ID |
+        | 2 | **GIVT** | Datacenter IP or invalid event type |
+        | 3 | **SIVT** | Device category mismatch |
+        | 4 | **Valid** | None of the above |
         
         ## 📊 Current Summary
         
-        | Category | Events | Percentage |
-        |----------|--------|------------|
-        | Valid | {total_events - givt - sivt_total - unknown:,.0f} | {(total_events - givt - sivt_total - unknown)/total_events*100:.2f}% |
-        | Invalid | {givt + sivt_total:,.0f} | {(givt + sivt_total)/total_events*100:.2f}% |
-        | Unknown | {unknown:,.0f} | {unknown/total_events*100:.2f}% |
+        | Category | Events | % |
+        |----------|--------|---|
+        | Valid | {valid:,} | {valid/total*100:.1f}% |
+        | GIVT | {givt:,} | {givt/total*100:.1f}% |
+        | SIVT | {sivt:,} | {sivt/total*100:.1f}% |
+        | Unknown | {unknown:,} | {unknown/total*100:.1f}% |
+        | **Total** | **{total:,}** | **100%** |
         """)
 
 # ============================================
@@ -912,27 +715,27 @@ elif page == "🔍 Findings & Recommendations":
     dsp_data = get_filtered_dsp(selected_dsp, selected_exchange, selected_app, selected_device, min_date_str, max_date_str)
     
     if not summary.empty:
-        total_events = summary['total_events'].iloc[0]
-        givt = summary['givt_events'].iloc[0]
-        sivt_total = summary['sivt_events'].iloc[0]
-        unknown = summary['missing_auction_ids'].iloc[0]
+        total = int(summary['total_events'].iloc[0])
+        unknown = int(summary['unknown_events'].iloc[0])
+        givt = int(summary['givt_events'].iloc[0])
+        sivt = int(summary['sivt_events'].iloc[0])
         
         st.markdown(f"""
         ## 📊 Executive Summary
         
         | Metric | Value |
         |--------|-------|
-        | Data Analyzed | {total_events:,} events |
-        | Invalid (GIVT+SIVT) | {givt + sivt_total:,.0f} ({(givt + sivt_total)/total_events*100:.2f}%) |
-        | Unknown | {unknown:,.0f} ({unknown/total_events*100:.2f}%) |
+        | Total Events | {total:,} |
+        | Invalid (GIVT+SIVT) | {givt+sivt:,} ({(givt+sivt)/total*100:.1f}%) |
+        | Unknown | {unknown:,} ({unknown/total*100:.1f}%) |
         """)
         
         if not dsp_data.empty:
-            fraudulent_dsps = dsp_data[dsp_data['givt_pct'] == 100]
-            if not fraudulent_dsps.empty:
-                st.subheader("🚨 DSPs with 100% GIVT")
-                for _, row in fraudulent_dsps.iterrows():
-                    st.error(f"DSP {row['dsp_id']}: {row['total_events']:,.0f} events - BLOCK IMMEDIATELY")
+            fraudulent = dsp_data[dsp_data['givt_pct'] >= 90]
+            if not fraudulent.empty:
+                st.subheader("🚨 High-GIVT DSPs")
+                for _, row in fraudulent.iterrows():
+                    st.error(f"DSP {row['dsp_id']}: {row['givt_pct']:.0f}% GIVT — {row['total_events']:,} events")
 
 # ============================================
 # PAGE 4: TRACE A CASE
@@ -949,20 +752,13 @@ else:
             classifications = ['All'] + traceable_ips['classification'].unique().tolist()
             selected_class = st.selectbox("Filter by Classification", classifications)
             
-            if selected_class != 'All':
-                filtered_ips = traceable_ips[traceable_ips['classification'] == selected_class]
-            else:
-                filtered_ips = traceable_ips
+            filtered = traceable_ips if selected_class == 'All' else traceable_ips[traceable_ips['classification'] == selected_class]
             
-            ip_df = filtered_ips.head(50).copy()
-            ip_df['label'] = ip_df.apply(lambda x: f"{x['ip']} ({x['classification']}, {x['event_count']:,} events)", axis=1)
+            ip_df = filtered.head(50).copy()
+            ip_df['label'] = ip_df.apply(lambda x: f"{x['ip']} ({x['classification']}, {x['event_count']:,})", axis=1)
             
-            selected_ip = st.selectbox("Select IP", ip_df['ip'].tolist(), 
+            selected_ip = st.selectbox("Select IP", ip_df['ip'].tolist(),
                                       format_func=lambda x: ip_df[ip_df['ip']==x]['label'].iloc[0])
-            
-            manual_ip = st.text_input("Or enter IP manually:")
-            if manual_ip:
-                selected_ip = manual_ip
         
         with col2:
             if selected_ip:
@@ -970,22 +766,20 @@ else:
                 
                 reasoning = get_fraud_reasoning(selected_ip)
                 if not reasoning.empty:
-                    for _, reason in reasoning.iterrows():
-                        severity_class = "alert-critical" if reason['score'] >= 3 else "alert-high" if reason['score'] >= 2 else "alert-medium" if reason['score'] >= 1 else "alert-low"
+                    for _, r in reasoning.iterrows():
+                        severity = "alert-critical" if r['score'] >= 3 else "alert-high" if r['score'] >= 2 else "alert-medium"
                         st.markdown(f"""
-                        <div class="metric-card {severity_class}">
-                        <strong>{reason['method']}</strong><br>
-                        {reason['severity']}<br>
-                        <small>{reason['details']}</small>
+                        <div class="metric-card {severity}">
+                        <strong>{r['method']}</strong><br>
+                        {r['severity']}<br>
+                        <small>{r['details']}</small>
                         </div>
                         """, unsafe_allow_html=True)
                 
-                trace_details = trace_ip_details(selected_ip, selected_class if selected_class != 'All' else 'All')
-                if not trace_details.empty:
-                    st.write(f"**{len(trace_details)} sample events:**")
-                    st.dataframe(trace_details, use_container_width=True, hide_index=True)
+                details = trace_ip_details(selected_ip, selected_class if selected_class != 'All' else 'All')
+                if not details.empty:
+                    st.dataframe(details, use_container_width=True, hide_index=True)
     else:
         st.warning("No traceability data available.")
 
-# Close connection
 conn.close()
