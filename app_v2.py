@@ -11,7 +11,7 @@ from datetime import datetime
 # GOOGLE DRIVE FILE IDs
 # ============================================
 google_drive_full_db = "14wLgFa80bMl9PKfPYrVSiSHLvjISJgle"  # Full 10GB database
-google_drive_demo_db = "1HtoEBV_AHoVGKpEq7uROKuaa53VJqYaU"   # Demo 311MB backup
+google_drive_demo_db = "1HtoEBV_AHoVGKpEq7uROKuaa53VJqYaU"   # Demo 311MB database
 
 st.set_page_config(page_title="CTV Fraud Detector", layout="wide")
 
@@ -24,7 +24,7 @@ st.sidebar.header("📊 Database")
 db_choice = st.sidebar.radio(
     "Select database:",
     ["🚀 Demo (Fast)", "💪 Full (Complete)"],
-    help="Demo: 4.2M events, instant load\nFull: 131M events, 10GB download"
+    help="Demo: 4.2M events, instant load after first download\nFull: 131M events, 10GB download"
 )
 
 if "Full" in db_choice:
@@ -62,17 +62,31 @@ if "Full" in db_choice:
         db_path = 'fraud_detection.db'
 else:
     db_path = 'fraud_detection.db'
+    # Auto-download demo database if not present
+    if not os.path.exists(db_path):
+        st.sidebar.warning("⏳ Downloading demo database (311MB)...")
+        with st.spinner("📥 Downloading demo database... This will take 1-2 minutes."):
+            progress_bar = st.progress(0)
+            try:
+                gdown.download(
+                    f"https://drive.google.com/uc?id={google_drive_demo_db}", 
+                    db_path, 
+                    quiet=False
+                )
+                progress_bar.progress(100)
+                st.sidebar.success("✅ Demo database ready!")
+                time.sleep(1)
+                st.rerun()
+            except Exception as e:
+                st.sidebar.error(f"Download failed: {e}")
+                st.stop()
 
 # ============================================
 # DATABASE CONNECTION
 # ============================================
 if not os.path.exists(db_path):
     st.error(f"Database file not found: {db_path}")
-    st.info("Using demo database. Full database available for download in sidebar.")
-    db_path = 'fraud_detection.db'
-    if not os.path.exists(db_path):
-        st.error("No database available. Please upload fraud_detection.db")
-        st.stop()
+    st.stop()
 
 try:
     conn = duckdb.connect(db_path, read_only=True)
@@ -400,7 +414,6 @@ def get_filtered_exchange(dsp, exchange, app, device, min_date, max_date):
 
 @st.cache_data(ttl=3600)
 def get_sivt_breakdown(dsp, exchange, app, device, min_date, max_date):
-    """Get SIVT breakdown."""
     where_clause = build_filter_conditions(dsp, exchange, app, device)
     
     query = f"""
@@ -456,7 +469,6 @@ def get_givt_breakdown(dsp, exchange, app, device, min_date, max_date):
 
 @st.cache_data(ttl=3600)
 def get_device_mismatch_data(dsp, exchange, app, device, min_date, max_date):
-    """Get device mismatch data."""
     where_clause = build_filter_conditions(dsp, exchange, app, device)
     
     count_query = f"""
@@ -497,7 +509,6 @@ def get_device_mismatch_data(dsp, exchange, app, device, min_date, max_date):
 
 @st.cache_data(ttl=3600)
 def get_device_distribution(dsp, exchange, app, device, min_date, max_date):
-    """Get device type distribution."""
     where_clause = build_filter_conditions(dsp, exchange, app, device)
     
     query = f"""
@@ -521,7 +532,6 @@ def get_device_distribution(dsp, exchange, app, device, min_date, max_date):
 
 @st.cache_data(ttl=3600)
 def get_raw_device_types(dsp, exchange, app, device, min_date, max_date):
-    """Get raw Peer39 device type distribution."""
     where_clause = build_filter_conditions(dsp, exchange, app, device)
     
     query = f"""
@@ -812,13 +822,26 @@ if page == "📈 Dashboard":
         else:
             st.info("No daily data available")
         
+        # SIVT Detection
+        st.subheader("🔍 SIVT Detection — Device Mismatch")
+        if not sivt_breakdown.empty and sivt_breakdown['event_count'].sum() > 0:
+            total_sivt = sivt_breakdown['event_count'].sum()
+            st.warning(f"⚠️ Found {total_sivt:,.0f} SIVT events (Device Mismatches)")
+            
+            with st.expander("📋 Top 50 Detailed Mismatches"):
+                device_mismatch, dm_records, dm_events = get_device_mismatch_data(selected_dsp, selected_exchange, selected_app, selected_device, min_date_str, max_date_str)
+                if device_mismatch is not None and not device_mismatch.empty:
+                    dm_display = device_mismatch[['ip', 'dsp_id', 'detected_category', 'reported_category', 'mismatch_count', 'severity']].copy()
+                    dm_display.columns = ['IP', 'DSP', 'Detected', 'Reported', 'Events', 'Severity']
+                    st.dataframe(dm_display, use_container_width=True, hide_index=True)
+        else:
+            st.success("✅ No device category mismatches detected")
+        
         # DSP Rankings
         st.subheader("🏢 DSP Rankings")
         if not dsp.empty:
-            dsp_display = dsp[['dsp_id', 'total_events', 'valid_events', 'invalid_events', 'missing_auction_ids',
-                              'givt_events', 'sivt_events', 'valid_pct', 'invalid_pct', 'unknown_pct', 'givt_pct', 'sivt_pct']].copy()
-            dsp_display.columns = ['DSP ID', 'Total', 'Valid', 'Invalid', 'Unknown', 
-                                   'GIVT', 'SIVT', 'Valid %', 'Invalid %', 'Unknown %', 'GIVT %', 'SIVT %']
+            dsp_display = dsp[['dsp_id', 'total_events', 'valid_events', 'invalid_events', 'givt_events', 'sivt_events', 'valid_pct', 'invalid_pct', 'givt_pct', 'sivt_pct']].copy()
+            dsp_display.columns = ['DSP ID', 'Total', 'Valid', 'Invalid', 'GIVT', 'SIVT', 'Valid %', 'Invalid %', 'GIVT %', 'SIVT %']
             st.dataframe(dsp_display, use_container_width=True, hide_index=True)
         else:
             st.info("No DSP data available")
@@ -826,10 +849,8 @@ if page == "📈 Dashboard":
         # Exchange Rankings
         st.subheader("🔄 Exchange Rankings")
         if not exchanges.empty:
-            exchange_display = exchanges[['exchange_id', 'total_events', 'valid_events', 'invalid_events', 'missing_auction_ids',
-                                         'givt_events', 'sivt_events', 'valid_pct', 'invalid_pct', 'unknown_pct', 'givt_pct', 'sivt_pct']].copy()
-            exchange_display.columns = ['Exchange ID', 'Total', 'Valid', 'Invalid', 'Unknown',
-                                        'GIVT', 'SIVT', 'Valid %', 'Invalid %', 'Unknown %', 'GIVT %', 'SIVT %']
+            exchange_display = exchanges[['exchange_id', 'total_events', 'valid_events', 'invalid_events', 'givt_events', 'sivt_events', 'valid_pct', 'invalid_pct', 'givt_pct', 'sivt_pct']].copy()
+            exchange_display.columns = ['Exchange ID', 'Total', 'Valid', 'Invalid', 'GIVT', 'SIVT', 'Valid %', 'Invalid %', 'GIVT %', 'SIVT %']
             st.dataframe(exchange_display, use_container_width=True, hide_index=True)
         else:
             st.info("No exchange data available")
@@ -851,52 +872,35 @@ elif page == "📋 Methodology & MRC":
         givt = summary['givt_events'].iloc[0]
         sivt_total = summary['sivt_events'].iloc[0]
         unknown = summary['missing_auction_ids'].iloc[0]
-        datacenter = summary['datacenter_traffic'].iloc[0]
-        invalid_event_count = summary['invalid_event_count'].iloc[0]
-        
-        invalid = givt + sivt_total
-        valid = total_events - invalid - unknown
-        
-        valid_pct = (valid / total_events * 100) if total_events > 0 else 0
-        invalid_pct = (invalid / total_events * 100) if total_events > 0 else 0
-        unknown_pct = (unknown / total_events * 100) if total_events > 0 else 0
-        givt_pct = (givt / total_events * 100) if total_events > 0 else 0
-        sivt_pct = (sivt_total / total_events * 100) if total_events > 0 else 0
         
         st.markdown(f"""
         ## 🎯 Fraud Definition (MRC-Compliant)
         
-        Following the MRC Invalid Traffic Detection and Filtration Standards, we define Invalid Traffic (IVT) as traffic that cannot be validated as coming from a real user watching real content on a real TV.
+        Following MRC standards, Invalid Traffic (IVT) is traffic that cannot be validated as coming from a real user watching real content on a real TV.
         
-        ## 📊 Traffic Classification Framework
+        ## 📊 Classification Framework
         
-        | Classification | Definition | Treatment |
-        |----------------|------------|-----------|
-        | **Valid Traffic** | Events confirmed from real users on real devices | Counted as valid impressions |
-        | **Invalid Traffic (IVT)** | GIVT or SIVT detected | Removed from reporting |
-        | **Unknown** | Cannot be validated | Excluded, separately disclosed |
+        | Classification | Treatment |
+        |----------------|-----------|
+        | **Valid** | Counted as valid impressions |
+        | **Invalid (GIVT+SIVT)** | Removed from reporting |
+        | **Unknown** | Excluded, separately disclosed |
         
         ### GIVT Detection
-        - **Datacenter Traffic**: IP addresses from cloud provider ranges
-        - **Invalid Events**: Events with null/'None' event types
+        - Datacenter Traffic
+        - Invalid Events (None/Null)
         
         ### SIVT Detection
-        - **Device Category Mismatch**: Detected vs reported device type differs
+        - Device Category Mismatch
         
-        ## 📊 Current Data Summary
+        ## 📊 Current Summary
         
-        | Category | Events | Percentage | Treatment |
-        |----------|--------|------------|-----------|
-        | ✅ Valid Traffic | {valid:,.0f} | {valid_pct:.2f}% | Counted as valid |
-        | ❌ Invalid (GIVT+SIVT) | {invalid:,.0f} | {invalid_pct:.2f}% | Removed |
-        | ├─ GIVT | {givt:,.0f} | {givt_pct:.2f}% | Routine filtration |
-        | │  ├─ Datacenter | {datacenter:,.0f} | {datacenter/total_events*100:.2f}% | |
-        | │  └─ Invalid Events | {invalid_event_count:,.0f} | {invalid_event_count/total_events*100:.2f}% | |
-        | └─ SIVT | {sivt_total:,.0f} | {sivt_pct:.2f}% | Advanced analytics |
-        | ❓ Unknown | {unknown:,.0f} | {unknown_pct:.2f}% | Excluded |
+        | Category | Events | Percentage |
+        |----------|--------|------------|
+        | Valid | {total_events - givt - sivt_total - unknown:,.0f} | {(total_events - givt - sivt_total - unknown)/total_events*100:.2f}% |
+        | Invalid | {givt + sivt_total:,.0f} | {(givt + sivt_total)/total_events*100:.2f}% |
+        | Unknown | {unknown:,.0f} | {unknown/total_events*100:.2f}% |
         """)
-    else:
-        st.info("No data available for the selected filters")
 
 # ============================================
 # PAGE 3: FINDINGS & RECOMMENDATIONS
@@ -913,17 +917,13 @@ elif page == "🔍 Findings & Recommendations":
         sivt_total = summary['sivt_events'].iloc[0]
         unknown = summary['missing_auction_ids'].iloc[0]
         
-        invalid = givt + sivt_total
-        valid = total_events - invalid - unknown
-        
         st.markdown(f"""
         ## 📊 Executive Summary
         
         | Metric | Value |
         |--------|-------|
         | Data Analyzed | {total_events:,} events |
-        | Valid Traffic | {valid:,.0f} ({valid/total_events*100:.2f}%) |
-        | Invalid (GIVT+SIVT) | {invalid:,.0f} ({invalid/total_events*100:.2f}%) |
+        | Invalid (GIVT+SIVT) | {givt + sivt_total:,.0f} ({(givt + sivt_total)/total_events*100:.2f}%) |
         | Unknown | {unknown:,.0f} ({unknown/total_events*100:.2f}%) |
         """)
         
@@ -932,27 +932,13 @@ elif page == "🔍 Findings & Recommendations":
             if not fraudulent_dsps.empty:
                 st.subheader("🚨 DSPs with 100% GIVT")
                 for _, row in fraudulent_dsps.iterrows():
-                    st.error(f"**DSP {row['dsp_id']}** — {row['total_events']:,.0f} events — {row['givt_pct']:.0f}% GIVT — BLOCK IMMEDIATELY")
-        
-        st.markdown("""
-        ## 🚀 Production Roadmap
-        
-        | Phase | Timeline | Actions |
-        |-------|----------|---------|
-        | Phase 1 | Week 1 | Block 100% GIVT DSPs, Block datacenter IPs |
-        | Phase 2 | Month 1 | Fix auction ID pass-through, SIVT monitoring |
-        | Phase 3 | Month 2 | Device verification pre-bid, SSAI validation |
-        | Phase 4 | Month 3 | Multi-Device detection, Volume detection |
-        """)
-    else:
-        st.info("No data available for the selected filters")
+                    st.error(f"DSP {row['dsp_id']}: {row['total_events']:,.0f} events - BLOCK IMMEDIATELY")
 
 # ============================================
 # PAGE 4: TRACE A CASE
 # ============================================
 else:
     st.title("🔎 Trace a Case — End-to-End Audit")
-    st.markdown("Select a flagged IP to trace the fraud reasoning end-to-end.")
     
     traceable_ips = get_traceable_ips(200)
     
@@ -993,8 +979,6 @@ else:
                         <small>{reason['details']}</small>
                         </div>
                         """, unsafe_allow_html=True)
-                else:
-                    st.info("No SIVT flags for this IP")
                 
                 trace_details = trace_ip_details(selected_ip, selected_class if selected_class != 'All' else 'All')
                 if not trace_details.empty:
