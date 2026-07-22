@@ -638,9 +638,9 @@ if page == "Dashboard":
 # ============================================
 # PAGE 2: METHODOLOGY & MRC
 # ============================================
-elif page == "Methodology & MRC":
-    peer39_header("CTV Fraud Detector")
-    st.title("Methodology & MRC Reference Points")
+elif page == "📋 Methodology & MRC":
+    st.title("📋 Methodology & MRC Reference Points")
+    
     summary = get_filtered_summary(selected_dsp, selected_exchange, selected_app, selected_device, min_date_str, max_date_str)
     
     if not summary.empty:
@@ -652,47 +652,120 @@ elif page == "Methodology & MRC":
         invalid_event = int(summary['invalid_event_count'].iloc[0])
         valid = total - unknown - givt - sivt
         
+        # Display current data summary
         st.markdown(f"""
-        ## Fraud Definition (MRC-Compliant)
+        ## 🎯 Fraud Definition (MRC-Compliant)
         
-        Following MRC Invalid Traffic Detection and Filtration Standards, Invalid Traffic (IVT) is traffic that cannot be validated as coming from a real user watching real content on a real TV.
+        Following **MRC Invalid Traffic Detection and Filtration Standards** (v3.0), Invalid Traffic (IVT) is defined as traffic that cannot be validated as coming from a real user watching real content on a real TV device. This includes:
         
-        ## Mutually Exclusive Classification
+        - **GIVT (General Invalid Traffic)**: Non-human traffic from datacenters, bots, or invalid events
+        - **SIVT (Sophisticated Invalid Traffic)**: Traffic that mimics human behavior but fails device/context validation
+        - **Unknown**: Traffic missing critical identifiers for proper classification
         
-        | Priority | Category | Criteria |
-        |----------|----------|----------|
-        | 1 | **Unknown** | Missing auction ID |
-        | 2 | **GIVT** | Datacenter IP or invalid event type (with auction ID) |
-        | 3 | **SIVT** | Device category mismatch (not GIVT, with auction ID) |
-        | 4 | **Valid** | None of the above |
+        ## 📊 Mutually Exclusive Classification Hierarchy
         
-        ### GIVT Detection
-        - **Datacenter Traffic**: IP addresses from cloud provider ranges
-        - **Invalid Events**: Events with null/'None' event types
+        Categories applied in **priority order** (highest to lowest). Once classified, events are excluded from lower-priority categories:
         
-        ### SIVT Detection
-        - **Device Category Mismatch**: Detected vs reported device type differs after normalization
+        | Priority | Category | Criteria | Detection Method |
+        |----------|----------|----------|------------------|
+        | 🔴 1 | **Unknown** | Missing auction ID (`is_missing_auction = 1`) | Database flag |
+        | 🟠 2 | **GIVT** | Datacenter IP OR invalid event type (with auction ID) | IP range + event validation |
+        | 🟡 3 | **SIVT** | Device category mismatch (not GIVT, with auction ID) | Device fingerprint analysis |
+        | 🟢 4 | **Valid** | None of the above | Passes all checks |
         
-        ## Current Data Summary
+        ### 🔍 GIVT Detection Details
         
-        | Category | Events | Percentage |
-        |----------|--------|------------|
-        | Valid | {valid:,} | {valid/total*100:.1f}% |
-        | GIVT | {givt:,} | {givt/total*100:.1f}% |
-        | Datacenter | {datacenter:,} | {datacenter/total*100:.2f}% |
-        | Invalid Events | {invalid_event:,} | {invalid_event/total*100:.2f}% |
-        | SIVT | {sivt:,} | {sivt/total*100:.1f}% |
-        | Unknown | {unknown:,} | {unknown/total*100:.1f}% |
-        | **Total** | **{total:,}** | **100%** |
+        GIVT is detected through two complementary methods:
+        
+        **1. Datacenter Traffic**
+        - IP addresses from known cloud provider ranges (AWS, GCP, Azure, etc.)
+        - Flag: `is_datacenter = 1`
+        - These IPs cannot represent real TV viewers
+        
+        **2. Invalid Events**
+        - Events with null or 'None' event types
+        - Flag: `is_invalid_event = 1`
+        - Suggests malformed or bot-generated bid requests
+        
+        ### 🔍 SIVT Detection Details
+        
+        SIVT is detected through **device category mismatch analysis**:
+        
+        - **Detected Category**: The device type identified by Peer39's device detection
+        - **Reported Category**: The device type claimed in the bid request
+        - **Mismatch**: When detected ≠ reported, suggests fraud
+        - Flag: `is_device_mismatch_sivt = 1`
+        - **Requires**: Valid auction ID, not GIVT
+        
+        ## 📊 Current Data Summary
+        
+        | Category | Events | Percentage | Status |
+        |----------|--------|------------|--------|
+        | ✅ Valid | {valid:,} | {valid/total*100:.1f}% | ✅ Clean Traffic |
+        | ❌ GIVT | {givt:,} | {givt/total*100:.1f}% | ⚠️ General Invalid |
+        | ├─ Datacenter | {datacenter:,} | {datacenter/total*100:.2f}% | 🏢 Cloud IPs |
+        | └─ Invalid Events | {invalid_event:,} | {invalid_event/total*100:.2f}% | 🔄 Malformed Events |
+        | ❌ SIVT | {sivt:,} | {sivt/total*100:.1f}% | 🎯 Sophisticated Invalid |
+        | ❓ Unknown | {unknown:,} | {unknown/total*100:.1f}% | 🔍 Missing Auction ID |
+        | **Total** | **{total:,}** | **100%** | - |
+        
+        ## 📋 MRC Compliance Checklist
+        
+        | MRC Requirement | Implementation Status | Notes |
+        |-----------------|----------------------|-------|
+        | **GIVT Detection** | ✅ Implemented | Datacenter IPs + Invalid Events |
+        | **SIVT Detection** | ✅ Implemented | Device Category Mismatch |
+        | **Traffic Filtration** | ✅ Implemented | Mutually Exclusive Classification |
+        | **Auction ID Validation** | ✅ Implemented | Unknown classification |
+        | **Multi-Device Detection** | ⏳ Roadmap | Planned for Phase 4 |
+        | **Volume Anomaly Detection** | ⏳ Roadmap | Planned for Phase 4 |
+        | **Overnight Traffic Detection** | ⏳ Roadmap | Planned for Phase 4 |
+        
+        ## 🛡️ Data Quality Metrics
+        
+        | Metric | Value | Interpretation |
+        |--------|-------|----------------|
+        | **Data Completeness** | {total:,} events | Full dataset analyzed |
+        | **Auction ID Coverage** | {(total-unknown)/total*100:.1f}% | { "✅ Good" if (total-unknown)/total > 0.8 else "⚠️ Needs Improvement" } |
+        | **Invalid Rate** | {(givt+sivt)/total*100:.1f}% | { "✅ Acceptable" if (givt+sivt)/total < 0.2 else "⚠️ High Invalid Rate" } |
+        | **GIVT Rate** | {givt/total*100:.1f}% | { "✅ Normal" if givt/total < 0.1 else "⚠️ Elevated GIVT" } |
+        | **SIVT Rate** | {sivt/total*100:.1f}% | { "✅ Normal" if sivt/total < 0.1 else "⚠️ Elevated SIVT" } |
         """)
-    else: st.info("No data available")
+        
+        # Show GIVT vs SIVT comparison chart
+        st.subheader("📊 GIVT vs SIVT Composition")
+        givt_sivt_data = pd.DataFrame([
+            {'Category': 'GIVT', 'Events': givt, 'Percentage': f"{givt/total*100:.1f}%"},
+            {'Category': 'SIVT', 'Events': sivt, 'Percentage': f"{sivt/total*100:.1f}%"},
+            {'Category': 'Unknown', 'Events': unknown, 'Percentage': f"{unknown/total*100:.1f}%"},
+            {'Category': 'Valid', 'Events': valid, 'Percentage': f"{valid/total*100:.1f}%"}
+        ])
+        
+        col1, col2 = st.columns([3, 2])
+        with col1:
+            fig_composition = px.pie(givt_sivt_data[givt_sivt_data['Events'] > 0], 
+                                     values='Events', names='Category',
+                                     title='Traffic Composition',
+                                     color='Category',
+                                     color_discrete_map=P39_COLORS)
+            fig_composition = style_plotly(fig_composition)
+            fig_composition.update_traces(textposition='inside', textinfo='percent+label')
+            st.plotly_chart(fig_composition, use_container_width=True)
+        
+        with col2:
+            st.write("**Composition Details**")
+            st.dataframe(givt_sivt_data[givt_sivt_data['Events'] > 0], 
+                        use_container_width=True, hide_index=True)
+        
+    else:
+        st.info("No data available for the selected filters")
 
 # ============================================
 # PAGE 3: FINDINGS & RECOMMENDATIONS
 # ============================================
-elif page == "Findings & Recommendations":
-    peer39_header("CTV Fraud Detector")
-    st.title("Findings & Recommendations")
+elif page == "🔍 Findings & Recommendations":
+    st.title("🔍 Findings & Recommendations")
+    
     summary = get_filtered_summary(selected_dsp, selected_exchange, selected_app, selected_device, min_date_str, max_date_str)
     dsp_data = get_filtered_dsp(selected_dsp, selected_exchange, selected_app, selected_device, min_date_str, max_date_str)
     sivt_breakdown = get_sivt_breakdown(selected_dsp, selected_exchange, selected_app, selected_device, min_date_str, max_date_str)
@@ -702,39 +775,236 @@ elif page == "Findings & Recommendations":
         unknown = int(summary['unknown_events'].iloc[0])
         givt = int(summary['givt_events'].iloc[0])
         sivt = int(summary['sivt_events'].iloc[0])
+        datacenter = int(summary['datacenter_traffic'].iloc[0])
+        invalid_event = int(summary['invalid_event_count'].iloc[0])
         valid = total - unknown - givt - sivt
         
+        invalid_total = givt + sivt
+        total_invalid_rate = invalid_total / total * 100
+        
+        # Determine overall risk level
+        if total_invalid_rate > 20:
+            risk_level = "🔴 CRITICAL"
+            risk_color = "red"
+        elif total_invalid_rate > 10:
+            risk_level = "🟠 HIGH"
+            risk_color = "orange"
+        elif total_invalid_rate > 5:
+            risk_level = "🟡 MEDIUM"
+            risk_color = "gold"
+        else:
+            risk_level = "🟢 LOW"
+            risk_color = "green"
+        
         st.markdown(f"""
-        ## Executive Summary
-        | Metric | Value |
-        |--------|-------|
-        | Data Analyzed | {total:,} events |
-        | Valid Traffic | {valid:,} ({valid/total*100:.1f}%) |
-        | Invalid (GIVT+SIVT) | {givt+sivt:,} ({(givt+sivt)/total*100:.1f}%) |
-        | Unknown | {unknown:,} ({unknown/total*100:.1f}%) |
-        """)
+        ## 📊 Executive Summary
+        
+        | Metric | Value | Status |
+        |--------|-------|--------|
+        | **Data Analyzed** | {total:,} events | - |
+        | **Valid Traffic** | {valid:,} ({valid/total*100:.1f}%) | ✅ Clean |
+        | **Invalid Traffic** | {invalid_total:,} ({total_invalid_rate:.1f}%) | {risk_level} |
+        | ├─ GIVT | {givt:,} ({givt/total*100:.1f}%) | ⚠️ General Invalid |
+        | └─ SIVT | {sivt:,} ({sivt/total*100:.1f}%) | 🎯 Sophisticated Invalid |
+        | **Unknown** | {unknown:,} ({unknown/total*100:.1f}%) | ❓ Missing Auction ID |
+        | **Overall Risk Level** | {risk_level} | <span style='color:{risk_color}'>{total_invalid_rate:.1f}% Invalid</span> |
+        """, unsafe_allow_html=True)
+        
+        # Risk Assessment Dashboard
+        st.subheader("🚨 Risk Assessment Dashboard")
+        
+        risk_col1, risk_col2, risk_col3, risk_col4 = st.columns(4)
+        with risk_col1:
+            st.metric("⚠️ Invalid Rate", f"{total_invalid_rate:.1f}%", 
+                     delta=f"{total_invalid_rate - 5:.1f}% above baseline", 
+                     delta_color="inverse" if total_invalid_rate > 5 else "normal")
+        with risk_col2:
+            st.metric("🏢 Datacenter Traffic", f"{datacenter/total*100:.2f}%", 
+                     delta=f"{datacenter:,} events")
+        with risk_col3:
+            st.metric("🔄 Malformed Events", f"{invalid_event/total*100:.2f}%", 
+                     delta=f"{invalid_event:,} events")
+        with risk_col4:
+            st.metric("📱 Device Mismatches", f"{sivt/total*100:.1f}%", 
+                     delta=f"{sivt:,} events", delta_color="inverse" if sivt > 0 else "normal")
+        
+        # 🚨 Critical Alerts Section
+        st.subheader("🚨 Critical Alerts")
+        
+        alert_col1, alert_col2 = st.columns(2)
+        
+        with alert_col1:
+            # GIVT Alerts
+            givt_alerts = []
+            if givt > 0:
+                givt_alerts.append(f"**GIVT Detected:** {givt:,} events ({givt/total*100:.1f}%)")
+                if datacenter > 0:
+                    givt_alerts.append(f"  - 🏢 Datacenter Traffic: {datacenter:,} events")
+                if invalid_event > 0:
+                    givt_alerts.append(f"  - 🔄 Invalid Events: {invalid_event:,} events")
+                if not dsp_data.empty:
+                    # DSPs with 100% GIVT
+                    full_givt = dsp_data[dsp_data['givt_pct'] == 100]
+                    if not full_givt.empty:
+                        for _, row in full_givt.head(5).iterrows():
+                            givt_alerts.append(f"  - ⛔ DSP {row['dsp_id']}: 100% GIVT")
+                st.error("\n".join(givt_alerts))
+            else:
+                st.success("✅ No GIVT detected in the current filter")
+        
+        with alert_col2:
+            # SIVT Alerts
+            sivt_alerts = []
+            if sivt > 0:
+                sivt_alerts.append(f"**SIVT Detected:** {sivt:,} events ({sivt/total*100:.1f}%)")
+                if not sivt_breakdown.empty:
+                    top_mismatches = sivt_breakdown.head(3)
+                    for _, row in top_mismatches.iterrows():
+                        sivt_alerts.append(f"  - 🔄 {row['mismatch_type']}: {row['event_count']:,} events")
+                st.warning("\n".join(sivt_alerts))
+            else:
+                st.success("✅ No SIVT detected in the current filter")
+        
+        if unknown > 0:
+            st.info(f"🔍 **Unknown Traffic:** {unknown:,} events ({unknown/total*100:.1f}%) - Missing auction IDs")
+        
+        # 📊 DSP Analysis
+        st.subheader("📊 DSP Performance Analysis")
         
         if not dsp_data.empty:
-            fraudulent = dsp_data[dsp_data['givt_pct'] >= 90]
-            if not fraudulent.empty:
-                st.subheader("DSPs with 90%+ GIVT")
-                for _, row in fraudulent.iterrows():
-                    st.error(f"**DSP {row['dsp_id']}** — {row['total_events']:,} events — {row['givt_pct']:.0f}% GIVT — BLOCK IMMEDIATELY")
+            # Filter DSPs by performance
+            dsp_data_copy = dsp_data.copy()
+            dsp_data_copy['risk_category'] = dsp_data_copy['givt_pct'].apply(
+                lambda x: '🔴 Critical' if x >= 50 else ('🟠 High' if x >= 20 else ('🟡 Medium' if x >= 10 else '🟢 Low'))
+            )
+            
+            # Show top offenders
+            st.write("**🔴 DSPs with Highest Invalid Rates (Top 10)**")
+            top_offenders = dsp_data_copy.sort_values('givt_pct', ascending=False).head(10)
+            
+            # Create a bar chart for DSP performance
+            fig_dsp = px.bar(top_offenders, x='dsp_id', y=['valid_pct', 'givt_pct', 'sivt_pct', 'unknown_pct'],
+                            title='DSP Traffic Composition (Top 10 by Invalid Rate)',
+                            labels={'value': 'Percentage', 'variable': 'Category', 'dsp_id': 'DSP ID'},
+                            color_discrete_map={
+                                'valid_pct': '#8cba51',
+                                'givt_pct': '#d92d20',
+                                'sivt_pct': '#E6AF2E',
+                                'unknown_pct': '#757575'
+                            })
+            fig_dsp = style_plotly(fig_dsp)
+            fig_dsp.update_layout(barmode='stack', xaxis_tickangle=-45)
+            st.plotly_chart(fig_dsp, use_container_width=True)
+            
+            # Display table
+            st.write("**📋 DSP Performance Data**")
+            dsp_display = top_offenders[['dsp_id', 'total_events', 'valid_pct', 'givt_pct', 'sivt_pct', 'unknown_pct']].copy()
+            dsp_display.columns = ['DSP ID', 'Total Events', 'Valid %', 'GIVT %', 'SIVT %', 'Unknown %']
+            st.dataframe(dsp_display, use_container_width=True, hide_index=True)
+            
+            # Immediate action recommendations for DSPs
+            critical_dsps = dsp_data[dsp_data['givt_pct'] >= 50]
+            if not critical_dsps.empty:
+                st.error(f"**🚨 IMMEDIATE ACTION REQUIRED:** {len(critical_dsps)} DSP(s) have ≥50% GIVT rate")
+                for _, row in critical_dsps.iterrows():
+                    st.error(f"  - **DSP {row['dsp_id']}**: {row['givt_pct']:.0f}% GIVT — RECOMMEND: Block immediately")
+        
+        # 🔄 SIVT Analysis
+        st.subheader("🔄 SIVT Device Mismatch Analysis")
         
         if not sivt_breakdown.empty:
-            st.subheader("SIVT Breakdown")
-            st.dataframe(sivt_breakdown[['mismatch_type', 'event_count', 'unique_ips', 'unique_dsps']], use_container_width=True, hide_index=True)
+            # Show top mismatch patterns
+            st.write("**Top Device Mismatch Patterns**")
+            
+            fig_sivt_pattern = px.bar(sivt_breakdown.head(10), x='mismatch_type', y='event_count',
+                                     title='Top 10 Device Mismatch Patterns',
+                                     color='event_count',
+                                     color_continuous_scale='YlOrRd')
+            fig_sivt_pattern = style_plotly(fig_sivt_pattern)
+            fig_sivt_pattern.update_layout(xaxis_tickangle=-45)
+            st.plotly_chart(fig_sivt_pattern, use_container_width=True)
+            
+            # Detailed table
+            st.write("**📋 SIVT Mismatch Details**")
+            sivt_display = sivt_breakdown[['mismatch_type', 'event_count', 'unique_ips', 'unique_dsps']].copy()
+            sivt_display.columns = ['Mismatch Pattern', 'Events', 'Unique IPs', 'Unique DSPs']
+            st.dataframe(sivt_display, use_container_width=True, hide_index=True)
+            
+            # Recommendations based on SIVT patterns
+            st.subheader("💡 SIVT Recommendations")
+            top_mismatch = sivt_breakdown.iloc[0] if not sivt_breakdown.empty else None
+            
+            if top_mismatch is not None:
+                st.markdown(f"""
+                **Primary Issue:** `{top_mismatch['mismatch_type']}` with {top_mismatch['event_count']:,} events
+                
+                **Recommended Actions:**
+                1. 🎯 **Device Verification**: Implement pre-bid device validation
+                2. 📊 **DSP Review**: Check DSPs with high SIVT rates
+                3. 🔍 **Pattern Analysis**: Investigate detected → reported mismatch patterns
+                4. 🛡️ **Blocking Rules**: Create rules for frequent mismatch patterns
+                """)
+        else:
+            st.success("✅ No device category mismatches detected - SIVT is clean!")
         
-        st.markdown("""
-        ## Production Roadmap
-        | Phase | Timeline | Actions |
-        |-------|----------|---------|
-        | Phase 1 | Week 1 | Block 100% GIVT DSPs, Block datacenter IPs |
-        | Phase 2 | Month 1 | Fix auction ID pass-through, SIVT monitoring |
-        | Phase 3 | Month 2 | Device verification pre-bid, SSAI validation |
-        | Phase 4 | Month 3 | Multi-Device detection, Volume detection |
+        # 📋 Production Roadmap
+        st.subheader("🚀 Production Roadmap")
+        
+        col1, col2 = st.columns([3, 2])
+        
+        with col1:
+            st.markdown("""
+            | Phase | Timeline | Actions |
+            |-------|----------|---------|
+            | **Phase 1** | Week 1 | ✅ Block 100% GIVT DSPs, ✅ Block datacenter IPs, ✅ Alert on high GIVT rates |
+            | **Phase 2** | Month 1 | 🔄 Fix auction ID pass-through, 🔄 SIVT monitoring dashboard, 🔄 Automated alerts |
+            | **Phase 3** | Month 2 | 🎯 Device verification pre-bid, 🎯 SSAI validation, 🎯 Publisher quality scoring |
+            | **Phase 4** | Month 3 | 📊 Multi-Device detection, 📊 Volume anomaly detection, 📊 Overnight traffic detection |
+            """)
+        
+        with col2:
+            # Current status
+            st.write("**✅ Implementation Status**")
+            if givt > 0:
+                st.warning(f"⚠️ {givt/total*100:.1f}% GIVT — Immediate action needed")
+            if sivt > 0:
+                st.warning(f"⚠️ {sivt/total*100:.1f}% SIVT — Monitoring recommended")
+            if unknown > 0:
+                st.info(f"🔍 {unknown/total*100:.1f}% Unknown — Investigation needed")
+            
+            if givt == 0 and sivt == 0:
+                st.success("✅ All traffic validated — Great quality!")
+        
+        # Final Summary
+        st.subheader("📋 Summary & Next Steps")
+        
+        st.markdown(f"""
+        **Current Status:** {risk_level} Risk Level ({total_invalid_rate:.1f}% Invalid)
+        
+        **Top Priority Actions:**
         """)
-    else: st.info("No data available")
+        
+        priority_actions = []
+        if givt/total > 0.1:
+            priority_actions.append("🔴 **Immediate:** Block DSPs with >50% GIVT rate")
+        if datacenter > 0:
+            priority_actions.append("🏢 **Immediate:** Block datacenter IP ranges")
+        if sivt > 0:
+            priority_actions.append("🔄 **High Priority:** Investigate SIVT mismatch patterns")
+        if unknown > 0:
+            priority_actions.append("🔍 **Medium Priority:** Fix auction ID pass-through")
+        
+        if priority_actions:
+            for action in priority_actions:
+                st.markdown(f"- {action}")
+        else:
+            st.success("✅ No critical issues detected — Maintain current monitoring")
+        
+        if unknown > 0:
+            st.info(f"**Note:** {unknown:,} events ({unknown/total*100:.1f}%) classified as Unknown due to missing auction IDs. Fixing this will improve classification accuracy.")
+        
+    else:
+        st.info("No data available for the selected filters")
 
 # ============================================
 # PAGE 4: TRACE A CASE
