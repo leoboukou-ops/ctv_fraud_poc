@@ -14,3 +14,5 @@ env/
 *.tmp
 fraud_detection.py
 fraud_detection_full.db
+fraud_detection.db
+fraud_detection_full.db
