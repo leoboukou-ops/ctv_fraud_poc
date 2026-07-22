@@ -180,6 +180,15 @@ def show_active_filters():
     if selected_device != 'All': filters.append(f"Device: {selected_device}")
     if filters: st.info(f"**Active Filters:** " + " | ".join(filters))
 
+# Helper function to abbreviate numbers
+def fmt(n):
+    if abs(n) >= 1_000_000:
+        return f"{n/1_000_000:.1f}M"
+    elif abs(n) >= 1_000:
+        return f"{n/1_000:.1f}K"
+    else:
+        return str(n)
+
 # ============================================
 # DATA FUNCTIONS (MUTUALLY EXCLUSIVE CATEGORIES)
 # ============================================
@@ -411,14 +420,14 @@ if page == "Dashboard":
         unknown_rate = (unknown / total_events * 100) if total_events > 0 else 0
         invalid_rate = givt_rate + sivt_rate
         
-        # 1. METRICS ROW
+        # 1. METRICS ROW (abbreviated numbers)
         col1, col2, col3, col4, col5, col6 = st.columns(6)
-        with col1: st.metric("Total Events", f"{total_events:,}")
-        with col2: st.metric("Valid Traffic", f"{valid_rate:.1f}%", delta=f"{valid:,} events", delta_color="normal")
-        with col3: st.metric("Invalid (GIVT+SIVT)", f"{invalid_rate:.1f}%", delta=f"{invalid:,} events", delta_color="inverse")
-        with col4: st.metric("GIVT", f"{givt_rate:.1f}%", delta=f"{givt:,} events", delta_color="inverse")
-        with col5: st.metric("SIVT", f"{sivt_rate:.1f}%", delta=f"{sivt_total:,} events", delta_color="inverse")
-        with col6: st.metric("Unknown", f"{unknown_rate:.1f}%", delta=f"{unknown:,} events", delta_color="off")
+        with col1: st.metric("Total Events", fmt(total_events))
+        with col2: st.metric("Valid Traffic", f"{valid_rate:.1f}%", delta=fmt(valid), delta_color="normal")
+        with col3: st.metric("Invalid", f"{invalid_rate:.1f}%", delta=fmt(invalid), delta_color="inverse")
+        with col4: st.metric("GIVT", f"{givt_rate:.1f}%", delta=fmt(givt), delta_color="inverse")
+        with col5: st.metric("SIVT", f"{sivt_rate:.1f}%", delta=fmt(sivt_total), delta_color="inverse")
+        with col6: st.metric("Unknown", f"{unknown_rate:.1f}%", delta=fmt(unknown), delta_color="off")
         
         # 2. CRITICAL ALERTS
         st.subheader("Critical Alerts")
@@ -550,8 +559,7 @@ if page == "Dashboard":
                 st.dataframe(givt_display, use_container_width=True, hide_index=True)
         else: st.info("No GIVT data available")
         
-        # 8. SIVT BREAKDOWN
-        st.subheader("SIVT Breakdown (Device Mismatch)")
+        # 8. SIVT BREAKDOWN        st.subheader("SIVT Breakdown (Device Mismatch)")
         if not sivt_breakdown.empty and sivt_breakdown['event_count'].sum() > 0 and sivt_total > 0:
             st.markdown("""<div style="background-color: #fff3cd; border-left: 4px solid #E6AF2E; padding: 10px; border-radius: 4px; margin-bottom: 15px;">
             <strong>Methodology Note:</strong> SIVT = <strong>Device Mismatch only</strong>. Multi-Device, Volume, Overnight moved to roadmap.</div>""", unsafe_allow_html=True)
@@ -708,7 +716,7 @@ elif page == "Findings & Recommendations":
     else: st.info("No data available")
 
 # ============================================
-# PAGE 4: TRACE A CASE (FIXED)
+# PAGE 4: TRACE A CASE
 # ============================================
 else:
     peer39_header("CTV Fraud Detector")
