@@ -1,0 +1,259 @@
+/* =====================================================================
+   Peer39 Design System — Streamlit override sheet
+   Target: Streamlit 1.50 (light theme). Loaded via peer39_style.py.
+   Pairs with .streamlit/config.toml (which sets base colors + fonts).
+   Only tokens from the Peer39 system are used.
+   ===================================================================== */
+
+/* ---- Fonts ---------------------------------------------------------- */
+@import url('https://fonts.googleapis.com/css2?family=Libre+Franklin:ital,wght@0,100..900;1,100..900&family=JetBrains+Mono:wght@400;500&display=swap');
+
+:root {
+  --p39-context:       #073763;
+  --p39-page-signals:  #3d85c6;
+  --p39-corporate:     #9fc5e8;
+  --p39-data-services: #cfe2f3;
+  --p39-suitability:   #8cba51;
+  --p39-marketplace:   #E6AF2E;
+  --p39-platform:      #757575;
+  --p39-new:           #B54F6F;
+
+  --p39-blue-50:  #f3f8fd;
+  --p39-blue-100: #e3eef9;
+  --p39-blue-400: #6aa5d9;
+  --p39-blue-500: #3d85c6;
+  --p39-blue-600: #2d6aa8;
+  --p39-blue-700: #1d4f86;
+  --p39-blue-900: #073763;
+
+  --p39-ink-900: #101828;
+  --p39-ink-700: #344054;
+  --p39-ink-500: #667085;
+  --p39-ink-300: #d0d5dd;
+  --p39-ink-200: #e4e7ec;
+  --p39-ink-100: #f2f4f7;
+  --p39-ink-50:  #f9fafb;
+
+  --p39-success:    #8cba51;  --p39-success-bg: #e9f3dc;
+  --p39-warning:    #E6AF2E;  --p39-warning-bg: #fbf1d6;
+  --p39-danger:     #d92d20;  --p39-danger-bg:  #fef3f2;
+  --p39-info:       #3d85c6;  --p39-info-bg:    #f3f8fd;
+
+  --p39-r-lg: 8px;  --p39-r-xl: 12px;  --p39-r-sm: 4px;  --p39-r-full: 9999px;
+  --p39-shadow-sm: 0 1px 3px rgba(16,24,40,.08), 0 1px 2px rgba(16,24,40,.04);
+  --p39-shadow-lg: 0 12px 24px -6px rgba(16,24,40,.10), 0 4px 8px -4px rgba(16,24,40,.04);
+  --p39-shadow-brand: 0 8px 24px -6px rgba(61,133,198,.35);
+  --p39-ease: cubic-bezier(0.16, 0.84, 0.44, 1);
+}
+
+/* ---- Global type ---------------------------------------------------- */
+html, body, .stApp, [class*="st-"], button, input, select, textarea {
+  font-family: 'Libre Franklin', 'Segoe UI', system-ui, sans-serif;
+}
+.stApp { background: #ffffff; color: var(--p39-ink-900); -webkit-font-smoothing: antialiased; }
+
+h1, h2, h3, h4, h5, h6,
+[data-testid="stHeading"] {
+  font-family: 'Libre Franklin', sans-serif !important;
+  color: var(--p39-context) !important;
+  letter-spacing: -0.02em;
+  font-weight: 700;
+}
+h1, .stApp h1 { font-weight: 800; }
+
+/* Constrain marketing-style width for readability (comment out if undesired) */
+.stMainBlockContainer, .block-container { max-width: 1280px; }
+
+a, a:visited { color: var(--p39-page-signals); text-decoration: none; font-weight: 600; }
+a:hover { color: var(--p39-blue-700); text-decoration: underline; text-underline-offset: 3px; }
+
+code, kbd, pre, .stCode, [data-testid="stCode"] {
+  font-family: 'JetBrains Mono', ui-monospace, Menlo, monospace !important;
+}
+
+/* ---- Header bar ----------------------------------------------------- */
+[data-testid="stHeader"] { background: transparent; }
+
+/* ---- Sidebar (navy) ------------------------------------------------- */
+[data-testid="stSidebar"] {
+  background: var(--p39-context);
+  border-right: 1px solid var(--p39-blue-700);
+}
+[data-testid="stSidebar"] * { color: var(--p39-blue-100); }
+[data-testid="stSidebar"] h1,
+[data-testid="stSidebar"] h2,
+[data-testid="stSidebar"] h3,
+[data-testid="stSidebar"] label,
+[data-testid="stSidebar"] .stMarkdown strong { color: #ffffff !important; }
+[data-testid="stSidebar"] hr { border-color: var(--p39-blue-700); }
+
+/* Sidebar inputs → readable on navy */
+[data-testid="stSidebar"] [data-baseweb="select"] > div,
+[data-testid="stSidebar"] [data-baseweb="input"] > div,
+[data-testid="stSidebar"] input {
+  background: #0f3a6a !important;
+  border-color: var(--p39-blue-700) !important;
+  color: #ffffff !important;
+}
+[data-testid="stSidebar"] [data-baseweb="select"] svg { fill: var(--p39-blue-100); }
+
+/* ---- Buttons -------------------------------------------------------- */
+.stButton > button,
+.stDownloadButton > button,
+[data-testid="stFormSubmitButton"] > button {
+  border-radius: var(--p39-r-lg);
+  font-weight: 600;
+  border: 1px solid var(--p39-page-signals);
+  transition: all .2s var(--p39-ease);
+}
+/* Secondary (default) buttons */
+.stButton > button[kind="secondary"],
+.stButton > button:not([kind="primary"]) {
+  background: #ffffff;
+  color: var(--p39-page-signals);
+  border: 1px solid var(--p39-page-signals);
+}
+.stButton > button:not([kind="primary"]):hover {
+  background: var(--p39-blue-50);
+  border-color: var(--p39-blue-600);
+  color: var(--p39-blue-700);
+  box-shadow: var(--p39-shadow-brand);
+}
+/* Primary buttons */
+.stButton > button[kind="primary"],
+[data-testid="stFormSubmitButton"] > button {
+  background: var(--p39-page-signals);
+  color: #ffffff;
+  border-color: var(--p39-page-signals);
+}
+.stButton > button[kind="primary"]:hover,
+[data-testid="stFormSubmitButton"] > button:hover {
+  background: var(--p39-blue-700);
+  border-color: var(--p39-blue-700);
+  box-shadow: var(--p39-shadow-brand);
+}
+.stButton > button:active { transform: scale(0.98); }
+/* Sidebar buttons: outlined-on-navy */
+[data-testid="stSidebar"] .stButton > button {
+  background: transparent;
+  color: #ffffff;
+  border: 1px solid var(--p39-blue-400);
+}
+[data-testid="stSidebar"] .stButton > button:hover {
+  background: var(--p39-blue-700);
+  border-color: var(--p39-blue-400);
+}
+
+/* ---- Metrics -------------------------------------------------------- */
+[data-testid="stMetric"] {
+  background: #ffffff;
+  border: 1px solid var(--p39-ink-200);
+  border-left: 4px solid var(--p39-page-signals);
+  border-radius: var(--p39-r-lg);
+  padding: 16px 18px;
+  box-shadow: var(--p39-shadow-sm);
+  transition: box-shadow .2s var(--p39-ease), border-color .2s var(--p39-ease);
+}
+[data-testid="stMetric"]:hover { box-shadow: var(--p39-shadow-lg); border-left-color: var(--p39-blue-600); }
+[data-testid="stMetricLabel"] { color: var(--p39-ink-500); font-weight: 600; letter-spacing: .02em; }
+[data-testid="stMetricValue"] { color: var(--p39-context); font-weight: 800; }
+
+/* ---- Tables / DataFrames ------------------------------------------- */
+[data-testid="stDataFrame"], [data-testid="stTable"] {
+  border: 1px solid var(--p39-ink-200);
+  border-radius: var(--p39-r-lg);
+  overflow: hidden;
+}
+[data-testid="stTable"] thead tr th {
+  background: var(--p39-context) !important;
+  color: #ffffff !important;
+  font-weight: 600;
+}
+[data-testid="stTable"] tbody tr:nth-child(even) { background: var(--p39-blue-50); }
+
+/* Markdown tables (used on Methodology/Findings pages) */
+.stMarkdown table { border-collapse: collapse; width: 100%; border-radius: var(--p39-r-lg); overflow: hidden; }
+.stMarkdown table th {
+  background: var(--p39-context); color: #fff; font-weight: 600;
+  text-align: left; padding: 10px 14px; border: 1px solid var(--p39-blue-700);
+}
+.stMarkdown table td { padding: 10px 14px; border: 1px solid var(--p39-ink-200); }
+.stMarkdown table tr:nth-child(even) td { background: var(--p39-blue-50); }
+
+/* ---- Alerts (st.success / error / warning / info) ------------------ */
+[data-testid="stAlert"], .stAlert {
+  border-radius: var(--p39-r-lg);
+  border-left: 4px solid var(--p39-page-signals);
+}
+/* Streamlit exposes alert kind via aria/icon; map by testid where present */
+[data-testid="stAlertContentSuccess"] { background: var(--p39-success-bg); border-left-color: var(--p39-success); }
+[data-testid="stAlertContentWarning"] { background: var(--p39-warning-bg); border-left-color: var(--p39-warning); }
+[data-testid="stAlertContentError"]   { background: var(--p39-danger-bg);  border-left-color: var(--p39-danger); }
+[data-testid="stAlertContentInfo"]    { background: var(--p39-info-bg);    border-left-color: var(--p39-info); }
+
+/* ---- Inputs / selects / dates -------------------------------------- */
+[data-baseweb="select"] > div,
+[data-baseweb="input"] > div,
+[data-baseweb="base-input"] {
+  border-radius: var(--p39-r-lg) !important;
+}
+[data-baseweb="select"] > div:focus-within,
+[data-baseweb="input"] > div:focus-within {
+  border-color: var(--p39-page-signals) !important;
+  box-shadow: 0 0 0 3px rgba(61,133,198,.15) !important;
+}
+
+/* Radio (main area) selected dot uses primaryColor already; add spacing */
+[data-testid="stRadio"] label { font-weight: 500; }
+
+/* ---- Tabs ----------------------------------------------------------- */
+.stTabs [data-baseweb="tab-list"] { gap: 4px; border-bottom: 1px solid var(--p39-ink-200); }
+.stTabs [data-baseweb="tab"] { font-weight: 600; color: var(--p39-ink-500); }
+.stTabs [aria-selected="true"] { color: var(--p39-page-signals); }
+.stTabs [data-baseweb="tab-highlight"] { background: var(--p39-page-signals); }
+
+/* ---- Expander ------------------------------------------------------- */
+[data-testid="stExpander"] {
+  border: 1px solid var(--p39-ink-200);
+  border-radius: var(--p39-r-lg);
+  overflow: hidden;
+}
+[data-testid="stExpander"] summary:hover { color: var(--p39-page-signals); }
+
+/* ---- Progress / spinner -------------------------------------------- */
+.stProgress > div > div > div > div { background: var(--p39-page-signals); }
+
+/* ---- Divider -------------------------------------------------------- */
+hr { border-color: var(--p39-ink-200); }
+
+/* =====================================================================
+   Legacy classes from your app_v2.py custom CSS — re-skinned to Peer39
+   (keeps your Trace-a-Case cards working without editing that markup)
+   ===================================================================== */
+.metric-card {
+  background: #ffffff;
+  border: 1px solid var(--p39-ink-200);
+  border-radius: var(--p39-r-lg);
+  padding: 16px;
+  border-left: 4px solid var(--p39-page-signals);
+  box-shadow: var(--p39-shadow-sm);
+  margin-bottom: 12px;
+  color: var(--p39-ink-700);
+}
+.metric-card strong { color: var(--p39-context); }
+.alert-critical { border-left-color: var(--p39-danger);      background: var(--p39-danger-bg); }
+.alert-high     { border-left-color: var(--p39-marketplace); background: var(--p39-warning-bg); }
+.alert-medium   { border-left-color: var(--p39-marketplace); background: var(--p39-warning-bg); }
+.alert-low      { border-left-color: var(--p39-page-signals); background: var(--p39-info-bg); }
+
+/* ---- Peer39 branded page header (used by peer39_style.py) ---------- */
+.p39-appbar {
+  display: flex; align-items: center; gap: 16px;
+  padding: 8px 0 16px; margin-bottom: 8px;
+  border-bottom: 2px solid var(--p39-blue-100);
+}
+.p39-appbar img { height: 34px; }
+.p39-appbar .p39-appbar-title {
+  font-weight: 700; font-size: 15px; color: var(--p39-ink-500);
+  letter-spacing: .06em; text-transform: uppercase;
+}
