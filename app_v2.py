@@ -117,7 +117,7 @@ P39_CHART_PALETTE = ['#8cba51', '#d92d20', '#E6AF2E', '#757575', '#3d85c6', '#9f
 # SIDEBAR - NAVIGATION & FILTERS
 # ============================================
 st.sidebar.title("Navigation")
-page = st.sidebar.radio("Go to:", ["Dashboard", "Methodology & MRC", "Findings & Recommendations", "Trace a Case"])
+page = st.sidebar.radio("Go to:", ["📊 Dashboard", "📋 Methodology & MRC", "🔍 Findings & Recommendations", "🔎 Trace a Case"])
 
 st.sidebar.header("Date Filter")
 min_date = st.sidebar.date_input("Start Date", datetime(2026, 6, 16))
@@ -395,8 +395,8 @@ def get_fraud_reasoning(ip):
 # ============================================
 # PAGE 1: DASHBOARD
 # ============================================
-if page == "Dashboard":
-    peer39_header("CTV Fraud Detector")  # Top bar with logo
+if page == "📊 Dashboard":
+    peer39_header("CTV Fraud Detector")
     st.markdown("### MRC-Compliant Fraud Detection with GIVT + SIVT + Unknown Classification")
     show_active_filters()
     
@@ -467,7 +467,7 @@ if page == "Dashboard":
             with col1:
                 fig_device = px.pie(device_distribution, values='event_count', names='device_type',
                                     title='Device Type Distribution', color_discrete_sequence=P39_CHART_PALETTE)
-                fig_device = style_plotly(fig_device)  # Apply Peer39 styling
+                fig_device = style_plotly(fig_device)
                 fig_device.update_traces(textposition='inside', textinfo='percent+label')
                 st.plotly_chart(fig_device, use_container_width=True)
             with col2:
@@ -489,7 +489,7 @@ if page == "Dashboard":
             with col1:
                 fig_raw = px.bar(raw_device_types.head(20), x='raw_device_type', y='event_count',
                                 title='Top 20 Raw Peer39 Device Types', color_discrete_sequence=P39_CHART_PALETTE)
-                fig_raw = style_plotly(fig_raw)  # Apply Peer39 styling
+                fig_raw = style_plotly(fig_raw)
                 fig_raw.update_xaxes(tickangle=45)
                 st.plotly_chart(fig_raw, use_container_width=True)
             with col2:
@@ -516,7 +516,7 @@ if page == "Dashboard":
             with col1:
                 fig = px.pie(pie_data, values='Events', names='Category', title='Traffic Classification',
                             color='Category', color_discrete_map=P39_COLORS)
-                fig = style_plotly(fig)  # Apply Peer39 styling
+                fig = style_plotly(fig)
                 fig.update_traces(textposition='inside', textinfo='percent+label')
                 st.plotly_chart(fig, use_container_width=True)
             with col2:
@@ -541,7 +541,7 @@ if page == "Dashboard":
                         title='Daily Events by Category', barmode='stack',
                         labels={'events': 'Events', 'date': 'Date', 'category': 'Category'},
                         color_discrete_map=P39_COLORS)
-            fig = style_plotly(fig)  # Apply Peer39 styling
+            fig = style_plotly(fig)
             st.plotly_chart(fig, use_container_width=True)
             
             daily_display = daily.copy()
@@ -564,7 +564,7 @@ if page == "Dashboard":
             with col1:
                 fig_givt = px.pie(givt_breakdown, values='event_count', names='givt_type',
                                   title='GIVT by Type', color_discrete_sequence=['#d92d20', '#B54F6F'])
-                fig_givt = style_plotly(fig_givt)  # Apply Peer39 styling
+                fig_givt = style_plotly(fig_givt)
                 fig_givt.update_traces(textposition='inside', textinfo='percent+label')
                 st.plotly_chart(fig_givt, use_container_width=True)
             with col2:
@@ -587,7 +587,7 @@ if page == "Dashboard":
             with col1:
                 fig_sivt = px.pie(sivt_breakdown, values='event_count', names='mismatch_type',
                                   title='SIVT by Mismatch Type', color_discrete_sequence=P39_CHART_PALETTE)
-                fig_sivt = style_plotly(fig_sivt)  # Apply Peer39 styling
+                fig_sivt = style_plotly(fig_sivt)
                 fig_sivt.update_traces(textposition='inside', textinfo='percent+label')
                 st.plotly_chart(fig_sivt, use_container_width=True)
             with col2:
@@ -652,7 +652,6 @@ elif page == "📋 Methodology & MRC":
         invalid_event = int(summary['invalid_event_count'].iloc[0])
         valid = total - unknown - givt - sivt
         
-        # Display current data summary
         st.markdown(f"""
         ## 🎯 Fraud Definition (MRC-Compliant)
         
@@ -726,10 +725,10 @@ elif page == "📋 Methodology & MRC":
         | Metric | Value | Interpretation |
         |--------|-------|----------------|
         | **Data Completeness** | {total:,} events | Full dataset analyzed |
-        | **Auction ID Coverage** | {(total-unknown)/total*100:.1f}% | { "✅ Good" if (total-unknown)/total > 0.8 else "⚠️ Needs Improvement" } |
-        | **Invalid Rate** | {(givt+sivt)/total*100:.1f}% | { "✅ Acceptable" if (givt+sivt)/total < 0.2 else "⚠️ High Invalid Rate" } |
-        | **GIVT Rate** | {givt/total*100:.1f}% | { "✅ Normal" if givt/total < 0.1 else "⚠️ Elevated GIVT" } |
-        | **SIVT Rate** | {sivt/total*100:.1f}% | { "✅ Normal" if sivt/total < 0.1 else "⚠️ Elevated SIVT" } |
+        | **Auction ID Coverage** | {(total-unknown)/total*100:.1f}% | {'✅ Good' if (total-unknown)/total > 0.8 else '⚠️ Needs Improvement'} |
+        | **Invalid Rate** | {(givt+sivt)/total*100:.1f}% | {'✅ Acceptable' if (givt+sivt)/total < 0.2 else '⚠️ High Invalid Rate'} |
+        | **GIVT Rate** | {givt/total*100:.1f}% | {'✅ Normal' if givt/total < 0.1 else '⚠️ Elevated GIVT'} |
+        | **SIVT Rate** | {sivt/total*100:.1f}% | {'✅ Normal' if sivt/total < 0.1 else '⚠️ Elevated SIVT'} |
         """)
         
         # Show GIVT vs SIVT comparison chart
@@ -1011,7 +1010,7 @@ elif page == "🔍 Findings & Recommendations":
 # ============================================
 else:
     peer39_header("CTV Fraud Detector")
-    st.title("Trace a Case — End-to-End Audit")
+    st.title("🔎 Trace a Case — End-to-End Audit")
     st.markdown("Select a flagged IP to trace the fraud reasoning end-to-end.")
     
     traceable_ips = get_traceable_ips(200)
